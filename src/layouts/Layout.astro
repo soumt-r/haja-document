@@ -1,0 +1,43 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  customMaxWidth?: string;
+}
+
+const { title, customMaxWidth = "max-w-3xl" } = Astro.props;
+---
+
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <!-- Pretendard Web Font -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  </head>
+  <body class="bg-[#FAFAFA] text-zinc-900 font-['Pretendard'] antialiased selection:bg-black selection:text-white min-h-screen flex flex-col">
+    <header class={`w-full ${customMaxWidth} mx-auto px-6 py-12 flex items-center justify-between`}>
+      <a href="/" class="text-xl font-bold tracking-tight hover:opacity-70 transition-opacity">
+        하자 <span class="font-light text-zinc-400">Haja</span>
+      </a>
+      <nav class="flex gap-6 text-sm font-medium text-zinc-500">
+        <a href="/playground" class="hover:text-black transition-colors font-semibold text-blue-600">놀이터(실행기)</a>
+        <a href="/docs/intro" class="hover:text-black transition-colors">문서</a>
+        <a href="https://github.com/soumt-r/haja-document" target="_blank" class="hover:text-black transition-colors">GitHub</a>
+      </nav>
+    </header>
+    
+    <main class={`flex-grow w-full ${customMaxWidth} mx-auto px-6 py-10 flex flex-col`}>
+      <slot />
+    </main>
+
+    <footer class={`w-full ${customMaxWidth} mx-auto px-6 py-12 text-sm text-zinc-400 border-t border-zinc-200 mt-20`}>
+      <p>한국어로 시작하는 쓸만한 객체지향 프로그래밍 언어, 하자(Haja)와 함께해요.</p>
+    </footer>
+  </body>
+</html>

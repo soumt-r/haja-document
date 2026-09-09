@@ -1,0 +1,30 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="하자(Haja) 언어">
+  <div class="py-20 flex flex-col items-start gap-8">
+    <h1 class="text-5xl sm:text-6xl font-bold tracking-tighter leading-tight text-black">
+      한국어로 시작하는<br />
+      <span class="text-zinc-400">객체지향 프로그래밍 언어</span>
+    </h1>
+    
+    <p class="text-xl text-zinc-600 leading-relaxed max-w-2xl mt-4 font-light">
+      영어를 몰라도 누구나 쉽게 코드를 읽고 쓸 수 있어요.<br />
+      자연스러운 우리말로 프로그래밍을 시작해 보세요.
+    </p>
+
+    <div class="flex flex-wrap gap-4 mt-8">
+      <a href="/docs/intro" class="bg-black text-white px-8 py-3.5 rounded-full font-medium hover:bg-zinc-800 transition-colors">
+        시작하기
+      </a>
+      <a href="/docs/tutorial/1-variables" class="bg-white border border-zinc-200 text-zinc-800 px-8 py-3.5 rounded-full font-medium hover:bg-zinc-50 transition-colors">
+        문법 살펴보기
+      </a>
+      <a href="/playground" class="bg-blue-50 text-blue-600 border border-blue-200 px-8 py-3.5 rounded-full font-medium hover:bg-blue-100 transition-colors flex items-center gap-2">
+        놀이터 열기
+      </a>
+    </div>
+  </div>
+
+</Layout>
