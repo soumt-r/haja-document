@@ -663,6 +663,14 @@ export class HajaInterpreter {
       if (op === '+') return l + r;
       if (op === '*') return l * r;
       if (op === '-') return l - r;
+
+      if (op === '/') {
+        if (r === 0) {
+          throw new Error("MathError: 0으로 나눌 수 없어요.");
+        }
+        return l / r;
+      }
+
       if (op === 'instanceof') {
         if (typeof r === 'string') {
           if (r === '문자열') return typeof l === 'string';
