@@ -26,6 +26,18 @@ export class Parser {
     this.pos += 1;
     return tok;
   }
+  
+  parse_type_reference(raw: string): ASTNode {
+    const inner = raw.slice(1, -1);
+    if (inner.startsWith('(')) {
+      const end = inner.indexOf(')');
+      const argsStr = inner.slice(1, end);
+      const name = inner.slice(end + 1);
+      const typeArgs = argsStr.split(',').map(s => ({ type: "TypeReference", name: s.trim(), typeArgs: [] }));
+      return { type: "TypeReference", name, typeArgs };
+    }
+    return { type: "TypeReference", name: inner, typeArgs: [] };
+  }
 
   parse_program(): ASTNode {
     const statements: ASTNode[] = [];
@@ -64,7 +76,7 @@ export class Parser {
       if (this.peek()?.type === 'KW_ALL') {
         this.consume('KW_ALL');
         this.consume('KW_IMPORT');
-        return { type: "ImportStatement", module: mod, selective: false, items: [], is_builtin };
+        return { type: "ImportStatement", module: { kind: is_builtin ? "builtin" : "user", name: mod }, imports: null };
       }
       
       const items = [];
@@ -74,7 +86,7 @@ export class Parser {
           throw new Error(`SyntaxError: 가져올 항목이 올바르지 않아요: ${item_tok.value}`);
         }
         const name = item_tok.value.slice(1, -1);
-        items.push({ type: item_tok.type, name });
+        items.push(name);
         
         const part = this.consume('PARTICLE');
         if (part.value === '과' || part.value === '와') continue;
@@ -84,7 +96,7 @@ export class Parser {
         }
         throw new Error(`SyntaxError: 예상치 못한 조사가 붙어있어요: ${part.value}`);
       }
-      return { type: "ImportStatement", module: mod, selective: true, items, is_builtin };
+      return { type: "ImportStatement", module: { kind: is_builtin ? "builtin" : "user", name: mod }, imports: items };
     }
 
     const tok = this.peek();
@@ -105,6 +117,7 @@ export class Parser {
       if (next_tok?.type === 'KW_RETURN_TYPE') return this.parse_function_decl();
       if (next_tok?.type === 'KW_INTERFACE') return this.parse_interface();
       if (next_tok?.type === 'LPAREN') return this.parse_generic_sov();
+      if (next_tok?.type === 'KW_CATCH') return this.parse_catch();
       return this.parse_class();
     }
 
@@ -117,11 +130,16 @@ export class Parser {
       if (is_decl) return this.parse_function_decl();
       return this.parse_generic_sov();
     }
+    
+    if (tok.type === 'VARIABLE' && tok.value === "'우리'" && this.peek(1)?.type === 'PARTICLE' && this.peek(1)?.value === '의' && this.peek(2)?.type === 'FUNCTION') {
+      return this.parse_function_decl();
+    }
+    
+    if (tok.type === 'KW_CATCH') return this.parse_catch();
 
     if (tok.type === 'KW_CONSTRUCT') return this.parse_constructor_decl();
     if (tok.type === 'KW_IF') return this.parse_if();
     if (tok.type === 'KW_TRY') return this.parse_try();
-    if (tok.type === 'KW_CATCH') throw new HajaError("SyntaxError: '오류가 발생했다면'은 반드시 '일단 해보자' 다음에 와야 해요.", tok.line, tok.col, Math.max(1, tok.value.length));
     if (tok.type === 'KW_FINALLY') throw new HajaError("SyntaxError: '마무리는 항상'은 반드시 '일단 해보자' 다음에 와야 해요.", tok.line, tok.col, Math.max(1, tok.value.length));
     
     let isForRange = false;
@@ -152,49 +170,70 @@ export class Parser {
   }
 
   parse_interface(): ASTNode {
-    const name = this.consume('TYPE').value.slice(1, -1);
+    const nameNode = this.parse_type_reference(this.consume('TYPE').value);
     if (this.peek()?.type === 'PARTICLE') this.consume();
     this.consume('KW_INTERFACE');
     const block = this.parse_block();
-    return { type: "InterfaceDeclaration", id: name, body: block.body };
+    return { type: "InterfaceDeclaration", id: nameNode.name, body: block.body };
   }
 
   parse_class(): ASTNode {
-    let name = "알수없음";
+    let nameNode = null;
     let baseClass = null;
-    const interfaces: string[] = [];
+    const interfaces: any[] = [];
     
     while (this.peek() && this.peek()?.type !== 'KW_CLASS' && this.peek()?.type !== 'COLON') {
       if (this.peek()?.type === 'TYPE') {
-        const typeName = this.consume('TYPE').value.slice(1, -1);
+        const typeNode = this.parse_type_reference(this.consume('TYPE').value);
         if (this.peek()?.type === 'PARTICLE') this.consume();
         
         if (this.peek()?.type === 'KW_BASE') {
           this.consume('KW_BASE');
-          baseClass = typeName;
+          baseClass = typeNode;
         } else if (this.peek()?.type === 'KW_IMPLEMENTS') {
           this.consume('KW_IMPLEMENTS');
-          interfaces.push(typeName);
+          interfaces.push(typeNode);
         } else {
-          name = typeName;
+          nameNode = typeNode;
         }
       } else {
         this.consume();
       }
     }
-    if (this.peek()?.type === 'KW_CLASS') this.consume('KW_CLASS');
+    
+    let isAbstract = false;
+    if (this.peek()?.type === 'KW_CLASS') {
+      const kw = this.consume('KW_CLASS');
+      if (kw.value.includes('밑설계하자')) isAbstract = true;
+    }
     
     const block = this.parse_block();
-    return { type: "ClassDeclaration", id: name, baseClass, interfaces, body: block.body };
+    return { 
+      type: "ClassDeclaration", 
+      id: nameNode ? nameNode.name : "알수없음", 
+      typeParams: nameNode ? nameNode.typeArgs.map((x:any)=>x.name) : [],
+      baseClass, 
+      interfaces, 
+      isAbstract,
+      body: block.body 
+    };
   }
 
   parse_function_decl(): ASTNode {
     let return_type = null;
     if (this.peek()?.type === 'TYPE') {
-      return_type = { type: "TypeReference", name: this.consume('TYPE').value.slice(1, -1) };
+      return_type = this.parse_type_reference(this.consume('TYPE').value);
       if (this.peek()?.type === 'PARTICLE') this.consume();
       this.consume('KW_RETURN_TYPE');
     }
+    
+    let isStatic = false;
+    if (this.peek()?.type === 'VARIABLE' && this.peek()?.value === "'우리'" && this.peek(1)?.type === 'PARTICLE' && this.peek(1)?.value === '의') {
+      this.consume('VARIABLE');
+      this.consume('PARTICLE');
+      isStatic = true;
+    }
+    
     const name = this.consume('FUNCTION').value.slice(1, -1);
     if (this.peek()?.type === 'PARTICLE') this.consume();
 
@@ -202,7 +241,7 @@ export class Parser {
       const mod = this.consume().value.slice(1, -1);
       this.consume('VARIABLE');
       this.consume('KW_IMPORT');
-      return { type: "ImportStatement", module: mod };
+      return { type: "ImportStatement", module: { kind: "builtin", name: mod }, imports: null };
     }
 
     let action = null;
@@ -214,7 +253,7 @@ export class Parser {
     while (this.peek() && this.peek()?.type !== 'RPAREN') {
       let paramType = null;
       if (this.peek()?.type === 'TYPE') {
-        paramType = { type: "TypeReference", name: this.consume('TYPE').value.slice(1, -1) };
+        paramType = this.parse_type_reference(this.consume('TYPE').value);
         if (this.peek()?.type === 'TYPE_IN') this.consume('TYPE_IN');
       }
       
@@ -235,26 +274,41 @@ export class Parser {
     if (action?.type === 'KW_REQUIRE') {
       return { type: "InterfaceMethod", id: name, returnType: return_type, params };
     }
+    
+    let isAbstract = false;
+    let blockBody = null;
+    if (this.peek()?.type === 'COLON') {
+      const block = this.parse_block();
+      blockBody = block.body;
+    } else {
+      isAbstract = true; // No body
+    }
 
-    const block = this.parse_block();
     const acc = action?.value.includes("숨기자") ? "private" : action?.value.includes("물려주자") ? "protected" : "public";
-    return { type: "FunctionDeclaration", id: name, returnType: return_type, accessModifier: acc, params, body: block.body };
+    return { type: "FunctionDeclaration", id: name, returnType: return_type, accessModifier: acc, params, body: blockBody, isStatic, isAbstract };
   }
 
   parse_constructor_decl(): ASTNode {
     this.consume('KW_CONSTRUCT');
     this.consume('LPAREN');
-    const params = [];
+    const params: any[] = [];
     while (this.peek() && this.peek()?.type !== 'RPAREN') {
-      const tok = this.consume();
-      if (tok.type === 'VARIABLE') {
-        params.push({ type: "Identifier", name: tok.value.slice(1, -1) });
+      let paramType = null;
+      if (this.peek()?.type === 'TYPE') {
+        paramType = this.parse_type_reference(this.consume('TYPE').value);
+        if (this.peek()?.type === 'TYPE_IN') this.consume('TYPE_IN');
       }
+      
+      if (this.peek()?.type === 'VARIABLE') {
+        const paramName = this.consume('VARIABLE').value.slice(1, -1);
+        params.push({ type: paramType, name: paramName, default: null });
+      }
+      if (this.peek()?.type === 'COMMA') this.consume('COMMA');
     }
     this.consume('RPAREN');
     if (this.peek()?.type === 'KW_DO_AS') this.consume('KW_DO_AS');
     const block = this.parse_block();
-    return { type: "ConstructorDeclaration", params, body: block.body };
+    return { type: "ConstructorDeclaration", id: { type: "Identifier", name: "처음 만들어질 때" }, params, body: block.body };
   }
 
   parse_condition(): ASTNode {
@@ -269,12 +323,15 @@ export class Parser {
       if (this.peek()?.type === 'COMPARE') {
         let op = this.consume().value;
         if (op.includes('일종이다')) op = 'instanceof';
+        else if (op.includes('같다') && op.includes('!')) op = '!=';
         else if (op.includes('같다')) op = '==';
         else if (op.includes('크다')) op = '>';
         else if (op.includes('작다')) op = '<';
         else if (op.includes('이상이다')) op = '>=';
         else if (op.includes('이하이다')) op = '<=';
         else if (op.includes('다르다')) op = '!=';
+        else if (op === '<' || op === '>' || op === '<=' || op === '>=' || op === '==' || op === '!=') {}
+        
         const left = components[0];
         const right = components.length > 1 ? components[1] : null;
         cond_ast = { type: "BinaryExpression", operator: op, left, right };
@@ -287,7 +344,14 @@ export class Parser {
       }
       return cond_ast;
     }
-    return this.parse_expression();
+    
+    const expr = this.parse_expression();
+    if (this.peek()?.type === 'LOGIC') {
+        const logic = this.consume().value;
+        const right_cond = this.parse_condition();
+        return { type: "LogicalExpression", operator: logic, left: expr, right: right_cond };
+    }
+    return expr;
   }
 
   parse_if(): ASTNode {
@@ -317,8 +381,12 @@ export class Parser {
   parse_try(): ASTNode {
     this.consume('KW_TRY');
     const block = this.parse_block();
-    const node: ASTNode = { type: "TryStatement", block: block.body, handler: null, finalizer: null };
-    if (this.peek()?.type === 'KW_CATCH') node.handler = this.parse_catch();
+    const node: ASTNode = { type: "TryStatement", block: block.body, handlers: [], finalizer: null };
+    
+    while (this.peek()?.type === 'TYPE' || this.peek()?.type === 'KW_CATCH') {
+      node.handlers.push(this.parse_catch());
+    }
+    
     if (this.peek()?.type === 'KW_FINALLY') {
       this.consume('KW_FINALLY');
       const fin_block = this.parse_block();
@@ -328,12 +396,20 @@ export class Parser {
   }
 
   parse_catch(): ASTNode {
+    let catchType = null;
+    if (this.peek()?.type === 'TYPE') {
+      catchType = this.parse_type_reference(this.consume('TYPE').value);
+      if (this.peek()?.type === 'PARTICLE') this.consume();
+    }
     this.consume('KW_CATCH');
-    this.consume('LPAREN');
-    const variable = this.consume('VARIABLE');
-    this.consume('RPAREN');
+    let param = { type: "Identifier", name: "e" };
+    if (this.peek()?.type === 'LPAREN') {
+      this.consume('LPAREN');
+      param = { type: "Identifier", name: this.consume('VARIABLE').value.slice(1, -1) };
+      this.consume('RPAREN');
+    }
     const block = this.parse_block();
-    return { type: "CatchClause", param: { type: "Identifier", name: variable.value.slice(1, -1) }, body: block.body };
+    return { type: "CatchClause", catchType, param, body: block.body };
   }
 
   parse_for_range(): ASTNode {
@@ -342,10 +418,10 @@ export class Parser {
     const end = this.parse_expression();
     this.consume('KW_TO');
     
-    let variable = null;
+    let variable = { type: "Identifier", name: "횟수" };
     if (this.peek()?.type === 'LPAREN') {
       this.consume('LPAREN');
-      variable = this.consume('VARIABLE').value.slice(1, -1);
+      variable = { type: "Identifier", name: this.consume('VARIABLE').value.slice(1, -1) };
       this.consume('RPAREN');
     }
     const block = this.parse_block();
@@ -354,12 +430,28 @@ export class Parser {
 
   parse_primary(): ASTNode {
     const tok = this.peek();
-    if (!tok) return { type: "Unknown", value: "" };
+    if (!tok) return { type: "Literal", value: null, raw: "" };
 
-    if (['NUMBER', 'STRING', 'BOOLEAN', 'NULL'].includes(tok.type)) {
-      return { type: "Literal", value: this.consume().value };
-    } else if (tok.type === 'FORMAT_STR') {
-      const val = this.consume().value.slice(2, -1);
+    if (['NUMBER', 'STRING'].includes(tok.type)) {
+      const v = this.consume();
+      return { type: "Literal", value: tok.type === 'NUMBER' ? Number(v.value) : v.value.slice(1, -1), raw: v.value };
+    } else if (tok.type === 'BOOLEAN') {
+      const v = this.consume();
+      return { type: "Literal", value: v.value === '참', raw: v.value };
+    } else if (tok.type === 'NULL') {
+      const v = this.consume();
+      return { type: "Literal", value: null, raw: v.value };
+    } else if (tok.type === 'OP' && tok.value === '-') {
+        this.consume('OP');
+        if (this.peek()?.type === 'NUMBER') {
+          const v = this.consume('NUMBER');
+          return { type: "Literal", value: -Number(v.value), raw: '-' + v.value };
+        }
+        // If not a number, just return Literal(null) for now as fallback
+        return { type: "Literal", value: null, raw: '-' };
+      } else if (tok.type === 'FORMAT_STR') {
+      const v = this.consume();
+      const val = v.value.slice(2, -1);
       const parts = val.split(/(\{[^}]+\})/);
       const quasis: string[] = [];
       const expressions: ASTNode[] = [];
@@ -374,11 +466,17 @@ export class Parser {
           quasis.push(unescaped);
         }
       }
-      return { type: "TemplateLiteral", quasis, expressions };
+      return { type: "TemplateLiteral", strings: quasis, expressions };
     } else if (tok.type === 'VARIABLE') {
       return { type: "Identifier", name: this.consume().value.slice(1, -1) };
     } else if (tok.type === 'FUNCTION') {
-      return { type: "FunctionReference", name: this.consume().value.slice(1, -1) };
+      const v = this.consume().value.slice(1, -1);
+      if (v.startsWith("'") && v.endsWith("'")) {
+        return { type: "FunctionReference", name: null, expression: { type: "Identifier", name: v.slice(1, -1) } };
+      } else if (v.startsWith('"') && v.endsWith('"')) {
+        return { type: "FunctionReference", name: null, expression: { type: "Literal", value: v.slice(1, -1), raw: v } };
+      }
+      return { type: "FunctionReference", name: v, expression: null };
     } else if (tok.type === 'KW_PARENT') {
       this.consume('KW_PARENT');
       return { type: "SuperReference" };
@@ -387,7 +485,7 @@ export class Parser {
       return { type: "OuterReference" };
     } else if (tok.type === 'KW_CONSTRUCT') {
       this.consume('KW_CONSTRUCT');
-      return { type: "FunctionReference", name: "처음 만들어질 때" };
+      return { type: "FunctionReference", name: "처음 만들어질 때", expression: null };
     } else if (tok.type === 'EMPTY_LIST') {
       this.consume();
       return { type: "ListLiteral", elements: [] };
@@ -418,19 +516,35 @@ export class Parser {
     } else if (tok.type === 'LPAREN') {
       const cond = this.parse_condition();
       return cond;
+    } else if (tok.type === 'KW_NEW') {
+      this.consume('KW_NEW');
+      const t = this.consume('TYPE');
+      if (this.peek()?.type === 'LPAREN') {
+        this.consume('LPAREN');
+        const args = this.parse_arguments();
+        this.consume('RPAREN');
+        return { type: "NewExpression", callee: this.parse_type_reference(t.value), arguments: args };
+      } else {
+        throw new Error(`SyntaxError: '새로운' 키워드 뒤에는 '[클래스이름](...)' 형태가 필요해요.`);
+      }
     } else if (tok.type === 'TYPE') {
       const t = this.consume();
       if (this.peek()?.type === 'LPAREN') {
         this.consume('LPAREN');
         const args = this.parse_arguments();
         this.consume('RPAREN');
-        return { type: "NewExpression", class: t.value.slice(1, -1), arguments: args };
+        return { type: "NewExpression", callee: this.parse_type_reference(t.value), arguments: args };
       }
-      return { type: "TypeLiteral", name: t.value.slice(1, -1) };
+      return this.parse_type_reference(t.value);
     } else if (tok.type === 'KW_LENGTH') {
       return { type: "LengthLiteral", value: this.consume().value };
+    } else if (tok.type === 'KW_POP' && this.peek(1)?.type === 'KW_VALUE') {
+      // ListPopExpression handling could be tricky here because it's part of an expression
+      // We parse generic components in generic_sov, but if it appears in primary...
+      // Usually it's handled in statement level or member expr.
     }
-    return { type: "Unknown", value: this.consume().value };
+    const val = this.consume();
+    return { type: "Literal", value: null, raw: val.value };
   }
 
   parse_arguments(): ASTNode[] {
@@ -443,6 +557,47 @@ export class Parser {
   }
 
   parse_expression(): ASTNode {
+    // Check for ListPopExpression (e.g. `'목록' (앞에서/뒤에서/에서) 꺼낸 값`)
+    const savedPos = this.pos;
+    if (this.peek()?.type === 'VARIABLE' || this.peek()?.type === 'KW_PARENT' || this.peek()?.type === 'KW_SELF') {
+      let target = this.parse_primary();
+      let isListPop = false;
+      let pos = "back";
+      
+      while (this.peek()?.type === 'PARTICLE' && this.peek()?.value === '의') {
+          this.consume('PARTICLE');
+          target = { type: "MemberExpression", object: target, property: this.parse_primary() };
+      }
+      
+      let hasParticle = false;
+      if (this.peek()?.type === 'PARTICLE' && this.peek()?.value.includes('에서')) {
+        hasParticle = true;
+        this.consume('PARTICLE');
+      }
+      
+      if (this.peek()?.type === 'KW_FRONT') {
+        this.consume('KW_FRONT');
+        if (this.peek()?.type === 'PARTICLE') this.consume('PARTICLE');
+        pos = "front";
+      } else if (this.peek()?.type === 'KW_BACK') {
+        this.consume('KW_BACK');
+        if (this.peek()?.type === 'PARTICLE') this.consume('PARTICLE');
+        pos = "back";
+      }
+      
+      if (this.peek()?.type === 'KW_POP') {
+        this.consume('KW_POP');
+        if (this.peek()?.type === 'TYPE_IN' && this.peek()?.value === 'ㄴ') {
+            this.consume(); // Handle '꺼낸'
+        }
+        if (this.peek()?.type === 'KW_VALUE') {
+            this.consume('KW_VALUE');
+            return { type: "ListPopExpression", target, position: pos };
+        }
+      }
+      this.pos = savedPos;
+    }
+    
     let expr = this.parse_primary();
     
     while (this.peek()) {
@@ -466,28 +621,52 @@ export class Parser {
         const op = this.consume().value;
         const right = this.parse_expression();
         expr = { type: "BinaryExpression", operator: op, left: expr, right: right };
-      } else {
-        break;
-      }
+      } else if (this.peek()?.type === 'COMPARE' && ['<', '>', '<=', '>=', '==', '!='].includes(this.peek()!.value)) {
+        const op = this.consume().value;
+        const right = this.parse_expression();
+        expr = { type: "BinaryExpression", operator: op, left: expr, right: right };
+        } else if (this.peek()?.type === 'LOGIC') {
+          const op = this.consume().value;
+          const right = this.parse_expression();
+          expr = { type: "LogicalExpression", operator: op, left: expr, right: right };
+        } else {
+          break;
+        }
     }
     return expr;
   }
 
   parse_generic_sov(): ASTNode | null {
     const components: any[] = [];
-    const verbs = ['KW_ASSIGN', 'KW_DECLARE', 'KW_ADD', 'KW_SUB', 'KW_APPEND', 'KW_PRINT', 'KW_PRINT_INLINE', 'KW_INPUT', 'KW_RETURN', 'KW_EXECUTE', 'KW_THROW', 'KW_FOREACH', 'KW_WHILE', 'KW_IMPORT', 'KW_SWITCH', 'KW_FALLTHROUGH'];
+    const verbs = ['KW_ASSIGN', 'KW_DECLARE', 'KW_ADD', 'KW_SUB', 'KW_APPEND', 'KW_POP', 'KW_PRINT', 'KW_PRINT_INLINE', 'KW_INPUT', 'KW_RETURN', 'KW_EXECUTE', 'KW_THROW', 'KW_FOREACH', 'KW_WHILE', 'KW_IMPORT', 'KW_SWITCH', 'KW_FALLTHROUGH'];
     
+    let isStatic = false;
+
     while (this.peek() && !verbs.includes(this.peek()!.type)) {
       if (this.peek()?.type === 'TYPE') {
         const saved = this.pos;
         const t = this.consume();
         if (this.peek()?.type === 'TYPE_IN') {
           this.consume('TYPE_IN');
-          components.push({ role: "type_cast", type_val: t.value.slice(1, -1) });
+          components.push({ role: "type_cast", type_val: t.value });
           continue;
         } else {
           this.pos = saved; // backtrack
         }
+      }
+      
+      if (this.peek()?.type === 'KW_FRONT') {
+        components.push({ role: "pos_front" });
+        this.consume();
+        if (this.peek()?.type === 'PARTICLE') this.consume();
+        continue;
+      }
+      
+      if (this.peek()?.type === 'KW_BACK') {
+        components.push({ role: "pos_back" });
+        this.consume();
+        if (this.peek()?.type === 'PARTICLE') this.consume();
+        continue;
       }
       
       const expr = this.parse_expression();
@@ -502,37 +681,101 @@ export class Parser {
     const verb = this.consume();
     
     if (verb.type === 'KW_ASSIGN' || verb.type === 'KW_DECLARE') {
-      const target = components.length > 0 ? components[0].expr : null;
+      let target = components.length > 0 ? components[0].expr : null;
       let typeAnnotation = null;
       let init_val = null;
       for (const c of components) {
-        if (c.role === "type_cast") typeAnnotation = { type: "TypeReference", name: c.type_val };
+        if (c.role === "type_cast") typeAnnotation = this.parse_type_reference(c.type_val);
         else if (c.expr && c !== components[0]) init_val = c.expr;
       }
       
       const isConst = verb.value.includes('고정하자');
       const isDeclarationOnly = verb.type === 'KW_DECLARE';
       
-      if (!isConst && !isDeclarationOnly && !typeAnnotation && target?.type === 'MemberExpression') {
-        return { type: "Assignment", target, value: init_val };
+      let getter = null;
+      let setter = null;
+      
+      if (this.peek()?.type === 'COLON') {
+        this.consume('COLON');
+        if (this.peek()?.type === 'INDENT') {
+          this.consume('INDENT');
+          while (this.peek() && this.peek()?.type !== 'DEDENT') {
+            if (this.peek()?.type === 'KW_GETTER') {
+              this.consume('KW_GETTER');
+              const blk = this.parse_block();
+              getter = blk.body;
+            } else if (this.peek()?.type === 'KW_SETTER') {
+              this.consume('KW_SETTER');
+              this.consume('LPAREN');
+              const p = this.consume('VARIABLE').value.slice(1, -1);
+              this.consume('RPAREN');
+              const blk = this.parse_block();
+              setter = { param: { type: "Identifier", name: p }, body: blk.body };
+            } else {
+              break; // unknown
+            }
+          }
+          if (this.peek()?.type === 'DEDENT') this.consume('DEDENT');
+        }
       }
+      
+      if (target?.type === 'MemberExpression' && target.object.type === 'Identifier' && target.object.name === '우리' && (verb.type === 'KW_ASSIGN' || verb.type === 'KW_DECLARE')) {
+        isStatic = true;
+        target = target.property;
+      }
+      if (!isConst && !isDeclarationOnly && !typeAnnotation && target?.type === 'MemberExpression' && !getter && !setter) {
+        let op = "=";
+        if (verb.value.includes('더하자')) op = "+=";
+        else if (verb.value.includes('빼자')) op = "-=";
+        if (op === "=") return { type: "Assignment", target, value: init_val };
+        return { type: "CompoundAssignment", operator: op, target, value: init_val };
+      }
+      
+      const acc = verb.value.includes('숨기자') ? "private" : verb.value.includes('물려주자') ? "protected" : "public";
       
       return { 
         type: "VariableDeclaration", 
         target, 
+        isStatic,
+        accessModifier: acc,
         typeAnnotation, 
         value: isDeclarationOnly ? null : init_val, 
         isConst, 
-        isDeclarationOnly 
+        isDeclarationOnly,
+        getter,
+        setter
       };
     } else if (verb.type === 'KW_ADD') {
-      return { type: "MathAdd", target: components[0].expr, value: components[1].expr };
+      let target = components[0]?.expr;
+      let init_val = components[1]?.expr;
+      if (target && (target.type === 'MemberExpression' || target.type === 'Identifier')) {
+        return { type: "CompoundAssignment", operator: "+=", target, value: init_val };
+      }
     } else if (verb.type === 'KW_SUB') {
-      return { type: "MathSubtract", target: components[0].expr, value: components[1].expr };
+      let target = components[0]?.expr;
+      let init_val = components[1]?.expr;
+      if (target && (target.type === 'MemberExpression' || target.type === 'Identifier')) {
+        return { type: "CompoundAssignment", operator: "-=", target, value: init_val };
+      }
     } else if (verb.type === 'KW_IMPORT') {
-      return { type: "ImportStatement", module: components[0].expr };
+      return { type: "ImportStatement", module: { kind: "user", name: components[0].expr.value }, imports: null };
     } else if (verb.type === 'KW_APPEND') {
-      return { type: "ListAppend", target: components[0].expr, value: components[1].expr };
+      let pos = "back";
+      if (components.find(c => c.role === 'pos_front')) pos = "front";
+      
+      const exprs = components.filter(c => c.expr).map(c => c.expr);
+      const target = exprs[0];
+      const val = exprs[1];
+      
+      return { type: "ListPushStatement", target: target, value: val, position: pos };
+    } else if (verb.type === 'KW_POP') {
+      let pos = "back";
+      if (components.find(c => c.role === 'pos_front')) pos = "front";
+      
+      const exprs = components.filter(c => c.expr).map(c => c.expr);
+      const target = exprs[0];
+      
+      return { type: "ListPopStatement", target: target, position: pos };
     } else if (verb.type === 'KW_PRINT') {
       return { type: "PrintStatement", value: components[0].expr };
     } else if (verb.type === 'KW_PRINT_INLINE') {
@@ -541,12 +784,13 @@ export class Parser {
       let target = null;
       let typeAnnotation = null;
       for (const c of components) {
-        if (c.role === "type_cast") typeAnnotation = { type: "TypeReference", name: c.type_val };
+        if (c.role === "type_cast") typeAnnotation = this.parse_type_reference(c.type_val);
         else if (c.expr && !target) target = c.expr;
       }
       return { type: "InputStatement", target, typeAnnotation };
     } else if (verb.type === 'KW_RETURN') {
-      return { type: "ReturnStatement", value: components.length > 0 ? components[0].expr : null };
+      const exprs = components.filter(c => c.expr).map(c => c.expr);
+      return { type: "ReturnStatement", value: exprs.length > 0 ? exprs[0] : null };
     } else if (verb.type === 'KW_EXECUTE') {
       return { type: "ExpressionStatement", expression: components[0].expr };
     } else if (verb.type === 'KW_THROW') {
@@ -599,3 +843,5 @@ export class Parser {
     return null;
   }
 }
+
+

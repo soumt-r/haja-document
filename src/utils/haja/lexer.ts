@@ -16,7 +16,7 @@ export class Lexer {
       ['NUMBER',       /^\d+(?:\.\d+)?/],
       ['FORMAT_STR',   /^틀"(?:\{[^{}]*\}|\\[\s\S]|[^"\\{])*"/],
       ['STRING',       /^"(?:\\[\s\S]|[^"\\])*"/],
-      ['TYPE',         /^\[[가-힣a-zA-Z_][가-힣a-zA-Z0-9_]*\]/],
+      ['TYPE',         /^\[(?:\([^)]+\))?[가-힣a-zA-Z_][가-힣a-zA-Z0-9_]*\]/],
       ['EMPTY_LIST',   /^\[\]/],
       ['LBRACKET',     /^\[/],
       ['RBRACKET',     /^\]/],
@@ -27,13 +27,15 @@ export class Lexer {
       ['NULL',         /^비어있음/],
       ['BOOLEAN',      /^참|^거짓/],
       
-      ['KW_CLASS',     /^설계하자/],
+      ['KW_CLASS',     /^설계하자|^밑설계하자/],
       ['KW_INTERFACE', /^규정하자/],
       ['KW_REQUIRE',   /^있어야 한다/],
       ['KW_CONSTRUCT', /^처음 만들어질 때/],
       ['KW_DO_AS',     /^다음과 같이 하자/],
       ['KW_BASE',      /^바탕으로 하고|^바탕으로/],
       ['KW_IMPLEMENTS',/^따르는/],
+      ['KW_GETTER',    /^가져올 때/],
+      ['KW_SETTER',    /^정할 때/],
       
       ['KW_FUNC',      /^만들자|^만들어 숨기자|^만들어 물려주자/],
       ['KW_ASSIGN',    /^정하여 숨기자|^정하여 물려주자|^정하자|^고정하자/],
@@ -46,7 +48,7 @@ export class Lexer {
       ['KW_EXECUTE',   /^실행하자/],
       
       ['KW_TRY',       /^일단 해보자/],
-      ['KW_CATCH',     /^오류가 발생했다면/],
+      ['KW_CATCH',     /^(오류가\s*)?발생했다면/],
       ['KW_FINALLY',   /^마무리는 항상/],
       ['KW_THROW',     /^발생시키자/],
       
@@ -73,24 +75,28 @@ export class Lexer {
       ['KW_INDEX',     /^번째(\s*값)?/],
       ['KW_LENGTH',    /^길이/],
       ['KW_PARENT',    /^부모/],
-      ['KW_OUTER',     /^바깥/],
+      ['KW_OUTER', /^바깥/],
+    ['KW_NEW', /^새로운/]
+,
       ['KW_SELF',      /^나/],
       
       ['LOGIC',        /^(그리고|또는)/],
-      ['COMPARE',      /^(와\s*같다|과\s*같다|보다\s*크다|보다\s*작다|이상이다|이하이다|의\s*일종이다|같다|다르다)/],
+      ['COMPARE',      /^(==|!=|<=|>=|<|>|와\s*같다|과\s*같다|보다\s*크다|보다\s*작다|이상이다|이하이다|의\s*일종이다|같다|다르다)/],
+      ['KW_FRONT',     /^앞에(서)?/],
+      ['KW_BACK',      /^뒤에(서)?/],
       ['PARTICLE',     /^(에서|으로|보다|만큼|을|를|로|은|는|이|가|에|의|와|과|도)/],
       ['KW_ADD',       /^더하자/],
       ['KW_SUB',       /^빼자/],
       ['KW_APPEND',    /^추가하자/],
+      ['KW_POP',       /^꺼내자|^꺼낸/],
       
-      ['OP',           /^[+\-*/]/],
+      ['OP',           /^[+\-*/%]/],
       
       ['TYPE_IN',      /^인/],
       ['COLON',        /^:/],
-      ['NEWLINE',      /^\n/],
+      ['NEWLINE', /^\r?\n/],
       ['ASSIGN_OP',    /^=/],
       ['VARIABLE',     /^'[가-힣a-zA-Z0-9_]+'/],
-      ['KW_ALL',       /^전부/],
       ['LPAREN',       /^\(/],
       ['RPAREN',       /^\)/],
       ['COMMA',        /^,/],
@@ -100,16 +106,16 @@ export class Lexer {
     ];
 
     const indents = [0];
-    const lines = this.code.split('\n');
+    const lines = this.code.split(/\r?\n/);
     let line_num = 1;
 
     for (let line of lines) {
-      if (!line.trim() || line.trim().match(/^\((참고|주석|메모)\)/)) {
+      if (!line.trim() || line.trim().match(/^\(?(참고|주석|메모)(:|\)| )/)) {
         line_num += 1;
         continue;
       }
       
-      line = line.replace(/\s*\((참고|주석|메모).*$/, '');
+      line = line.replace(/\s*\(?(참고|주석|메모)(:|\)| ).*$/, '');
 
       const indent_match = line.match(/^[ \t]*/);
       const current_indent = indent_match ? indent_match[0].length : 0;
@@ -134,7 +140,7 @@ export class Lexer {
             const value = match[0];
             if (kind !== 'SPACE') {
               if (kind === 'MISMATCH') {
-                throw new HajaError(`SyntaxError: 알 수 없는 기호 '${value}'를 발견했어요.`, line_num, col, value.length);
+                throw new HajaError("SyntaxError: Unknown char 0x" + remaining.charCodeAt(0).toString(16), line_num, col, 1);
               }
               this.tokens.push({ type: kind, value: value.trim(), line: line_num, col: col });
             }
@@ -145,7 +151,7 @@ export class Lexer {
           }
         }
         if (!matched) {
-          throw new HajaError("SyntaxError: 코드를 읽는 중에 알 수 없는 에러가 발생했어요.", line_num, col);
+          throw new HajaError("SyntaxError: Unknown char 0x" + remaining.charCodeAt(0).toString(16), line_num, col, 1);
         }
       }
       line_num += 1;
@@ -157,3 +163,4 @@ export class Lexer {
     }
   }
 }
+

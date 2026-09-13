@@ -3,42 +3,39 @@ layout: ../../../layouts/DocLayout.astro
 title: 2. 구문 트리(AST) 구조
 description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ---
-
 # 하자(Haja) 언어 AST (추상 구문 트리) 명세서
 
-이 문서는 하자 언어 파서(`Parser`)가 생성하는 AST(Abstract Syntax Tree)의 노드별 JSON 스키마를 정의해요. 하자 언어의 인터프리터, 컴파일러, 정적 분석기 등 모든 도구는 이 명세서를 기준으로 구현된답니다.
+이 문서는 하자 언어 파서(`Parser`)가 생성하는 AST(Abstract Syntax Tree)의 노드별 JSON 스키마를 정의하고 있어요. 하자 언어의 인터프리터, 컴파일러, 정적 분석기 등 모든 도구는 이 명세서를 기준으로 구현된답니다.
 
 ## 1. 프로그램 (Program)
 모든 소스 코드의 최상위 노드예요.
 ```json
 {
   "type": "Program",
-  "body": [ /* Statement 노드들의 배열 */ ]
+  "body": [ /* Statement 노드들의 목록 */ ]
 }
 ```
 
 ## 2. 선언 및 할당 (Declarations & Assignments)
 
-### VariableDeclaration (변수 선언)
-`'이름'을 [타입]인 값으로 정하자/고정하자/준비하자`
+### VariableDeclaration (변수 선언 및 값 할당)
+`('우리'의) '이름'을 ([타입]인) 값으로 정하자/고정하자/준비하자`
+(참고: 파서는 변수 선언과 값 재할당을 구분하지 않고 모두 이 노드로 파싱하며, 동적 변수 생성인지 재대입인지는 런타임이 결정해요.)
 ```json
 {
   "type": "VariableDeclaration",
-  "target": { "type": "Identifier", "name": "이름" },
-  "typeAnnotation": { "type": "TypeReference", "name": "타입" }, // 타입이 없으면 null
-  "value": /* Expression 노드 (준비하자인 경우 null) */,
+  "target": /* Identifier 또는 MemberExpression (객체의 속성에 할당할 경우) */,
+  "isStatic": false, // '우리'의 가 붙은 경우 true
+  "accessModifier": "public", // 클래스 필드인 경우 "public", "private", "protected" 중 하나 (명시되지 않으면 public)
+  "typeAnnotation": { "type": "TypeReference", "name": "타입" }, // 타입 지정이 없으면 null
+  "value": /* Expression 노드 (준비하자이거나 속성 접근자인 경우 null) */,
   "isConst": false, // '고정하자' 인 경우 true
-  "isDeclarationOnly": false // '준비하자' 인 경우 true
-}
-```
-
-### Assignment (값 재할당)
-`'이름'을 값으로 정하자`
-```json
-{
-  "type": "Assignment",
-  "target": { "type": "Identifier", "name": "이름" } /* 또는 MemberExpression */,
-  "value": /* Expression 노드 */
+  "isDeclarationOnly": false, // '준비하자' 인 경우 true
+  "getter": [ /* Statement 노드 목록 (속성 접근자의 '가져올 때' 블록, 없으면 null) */ ],
+  "setter": {
+    "param": { "type": "Identifier", "name": "새값" },
+    "body": [ /* Statement 노드 목록 (속성 접근자의 '정할 때' 블록) */ ]
+  } // 속성 접근자의 '정할 때' 블록, 없으면 null
 }
 ```
 
@@ -46,11 +43,40 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 `'이름'에 값을 더하자/빼자` 등
 ```json
 {
-  "type": "MathAdd", // 더하자
+  "type": "CompoundAssignment",
+  "operator": "+=", // 더하자는 "+=", 빼자는 "-=" 등
   "target": /* Identifier 또는 MemberExpression */,
   "value": /* Expression 노드 */
 }
-// 빼자(MathSubtract), 추가하자(ListAppend) 도 동일한 구조
+```
+
+### List Operations (목록 전용 조작)
+`'목록' (앞에/뒤에/에) 값을 추가하자`
+```json
+{
+  "type": "ListPushStatement",
+  "target": /* Identifier 또는 MemberExpression */,
+  "value": /* Expression 노드 */,
+  "position": "back" // "front" (앞에), "back" (뒤에/기본값)
+}
+```
+
+`'목록' (앞에서/뒤에서/에서) 꺼내자`
+```json
+{
+  "type": "ListPopStatement",
+  "target": /* Identifier 또는 MemberExpression */,
+  "position": "back" // "front" (앞에서), "back" (뒤에서/기본값)
+}
+```
+
+`'목록' (앞에서/뒤에서/에서) 꺼낸 값` (Expression 노드)
+```json
+{
+  "type": "ListPopExpression",
+  "target": /* Identifier 또는 MemberExpression */,
+  "position": "back" // "front", "back"
+}
 ```
 
 ## 3. 제어 흐름 (Control Flow)
@@ -61,14 +87,14 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 {
   "type": "IfStatement",
   "condition": /* Expression 노드 */,
-  "consequent": [ /* Statement 노드들의 배열 */ ],
+  "consequent": [ /* Statement 노드들의 목록 */ ],
   "elifs": [
     {
       "condition": /* Expression 노드 */,
-      "consequent": [ /* Statement 노드들의 배열 */ ]
+      "consequent": [ /* Statement 노드들의 목록 */ ]
     }
   ],
-  "alternate": [ /* Statement 노드들의 배열 (없으면 빈 배열) */ ]
+  "alternate": [ /* Statement 노드들의 목록 (없으면 빈 목록) */ ]
 }
 ```
 
@@ -80,11 +106,11 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
   "discriminant": /* Expression 노드 */,
   "cases": [
     {
-      "values": [ /* Expression 노드 배열 (쉼표로 여러 조건 가능) */ ],
-      "body": [ /* Statement 노드 배열 */ ]
+      "values": [ /* Expression 노드 목록 (쉼표로 여러 조건 가능) */ ],
+      "body": [ /* Statement 노드 목록 */ ]
     }
   ],
-  "default": [ /* Statement 노드 배열 (없으면 None/null) */ ]
+  "default": [ /* Statement 노드 목록 (선택 사항, 없으면 null) */ ]
 }
 ```
 
@@ -102,18 +128,18 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 {
   "type": "WhileLoop",
   "condition": /* Expression 노드 */,
-  "body": [ /* Statement 노드 배열 */ ]
+  "body": [ /* Statement 노드 목록 */ ]
 }
 ```
 
-### ForEachLoop (배열 순회)
-`'배열'의 '항목'마다 반복하자:`
+### ForEachLoop (목록 순회)
+`'목록'의 '항목'마다 반복하자:`
 ```json
 {
   "type": "ForEachLoop",
   "item": { "type": "Identifier", "name": "항목" }, // 순회할 개별 요소의 Identifier 노드
-  "iterable": /* Expression 노드 (평가 결과가 List 타입이어야 함) */,
-  "body": [ /* Statement 노드 배열 */ ]
+  "iterable": /* Expression 노드 (평가 결과가 List 또는 문자열 타입이어야 함) */,
+  "body": [ /* Statement 노드 목록 */ ]
 }
 ```
 
@@ -125,7 +151,7 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
   "start": /* Expression 노드 */,
   "end": /* Expression 노드 */,
   "iterator": { "type": "Identifier", "name": "횟수" }, // 반복자 변수의 Identifier 노드
-  "body": [ /* Statement 노드 배열 */ ]
+  "body": [ /* Statement 노드 목록 */ ]
 }
 ```
 
@@ -140,13 +166,15 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ## 4. 함수 및 객체지향 (Functions & OOP)
 
 ### FunctionDeclaration (함수/메서드 선언)
-`[리턴타입]을 돌려주는 <함수명>을 만들자 ([타입]인 '인자' = "기본값"):`
+`[리턴타입]을 돌려주는 ('우리'의) <함수명>을 만들자 ([타입]인 '인자' = "기본값"):`
 ```json
 {
   "type": "FunctionDeclaration",
   "id": "함수명",
+  "isStatic": false, // '우리'의 가 붙은 경우 true
   "accessModifier": "public", // "public", "private", "protected" 중 하나 (명시되지 않으면 public)
   "returnType": { "type": "TypeReference", "name": "리턴타입" }, // 명시되지 않으면 null
+  "isAbstract": false, // '밑설계' 시 (본문이 없는 경우) true
   "params": [
     { 
       "type": { "type": "TypeReference", "name": "타입" }, // 명시되지 않으면 null
@@ -154,27 +182,29 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
       "default": /* Expression 노드 (기본값이 없으면 null) */
     }
   ],
-  "body": [ /* Statement 노드 배열 */ ]
+  "body": [ /* Statement 노드 목록 (isAbstract가 true이면 null) */ ]
 }
 ```
 
 ### ReturnStatement (반환문)
-`'값'을 돌려주자`
+`'값'을 돌려주자` 또는 `돌려주자`
 ```json
 {
   "type": "ReturnStatement",
-  "value": /* Expression 노드 */
+  "value": /* Expression 노드 (값 생략 시 null) */
 }
 ```
 
 ### ClassDeclaration (클래스 선언)
-`[부모클래스]를 바탕으로 하고 [인터페이스]를 따르는 [클래스명]을 설계하자:`
+`[부모클래스]를 바탕으로 하고 [인터페이스]를 따르는 [(타입)클래스명]을 설계하자/밑설계하자:`
 ```json
 {
   "type": "ClassDeclaration",
   "id": "클래스명",
-  "baseClass": "부모클래스명", // 상속받는 단일 부모 클래스 (없으면 null)
-  "interfaces": [ "인터페이스명1", "인터페이스명2" ], // 구현하는 인터페이스 리스트 (없으면 빈 배열)
+  "typeParams": [ "타입" ], // 제네릭 타입 파라미터 (없으면 빈 목록)
+  "isAbstract": false, // '밑설계하자' 인 경우 true
+  "baseClass": { "type": "TypeReference", "name": "부모클래스명" }, // 상속받는 단일 부모 클래스 (없으면 null)
+  "interfaces": [ /* TypeReference 노드 목록 (없으면 빈 목록) */ ], // 구현하는 인터페이스 리스트
   "body": [ /* FunctionDeclaration, ConstructorDeclaration 등 */ ]
 }
 ```
@@ -184,8 +214,9 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ```json
 {
   "type": "ConstructorDeclaration",
+  "id": { "type": "Identifier", "name": "처음 만들어질 때" },
   "params": [ /* FunctionDeclaration과 동일한 파라미터 구조 */ ],
-  "body": [ /* Statement 노드 배열 */ ]
+  "body": [ /* Statement 노드 목록 */ ]
 }
 ```
 
@@ -195,7 +226,7 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 {
   "type": "InterfaceDeclaration",
   "id": "인터페이스명",
-  "body": [ /* InterfaceMethod 노드 배열 */ ]
+  "body": [ /* InterfaceMethod 노드 목록 */ ]
 }
 ```
 
@@ -218,7 +249,18 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 {
   "type": "BinaryExpression",
   "left": /* Expression 노드 */,
-  "operator": "+", "-", "*", "==", "<", ">", "instanceof" /* 연산자 기호 */,
+  "operator": "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "instanceof" /* 연산자 기호 */,
+  "right": /* Expression 노드 (단, 연산자가 "instanceof"일 경우 TypeReference 노드) */
+}
+```
+
+### LogicalExpression (논리 연산)
+`A 그리고 B`, `A 또는 B` (단락 평가 지원)
+```json
+{
+  "type": "LogicalExpression",
+  "left": /* Expression 노드 */,
+  "operator": "그리고", "또는",
   "right": /* Expression 노드 */
 }
 ```
@@ -228,33 +270,36 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ```json
 {
   "type": "CallExpression",
-  "callee": /* Identifier 또는 MemberExpression */,
-  "arguments": [ /* Expression 노드 배열 */ ]
+  "callee": /* Identifier, MemberExpression, 또는 FunctionReference */,
+  "arguments": [ /* Expression 노드 목록 */ ]
 }
 ```
 
 ### NewExpression (인스턴스 생성)
-`[클래스명]인 클래스명(인자)`
+`새로운 [클래스명](인자)`
 ```json
 {
   "type": "NewExpression",
-  "class": "클래스명",
-  "arguments": [ /* Expression 노드 배열 */ ]
+  "callee": {
+    "type": "TypeReference",
+    "name": "클래스명"
+  },
+  "arguments": [ /* Expression 노드 목록 */ ]
 }
 ```
 
 ### MemberExpression (속성/메서드/인덱스 접근)
-`'객체'의 '속성'`, `'배열'의 1번째`, `'사전'의 "키"`
+`'객체'의 '속성'`, `'목록'의 1번째`, `'사전'의 "키"`
 ```json
 {
   "type": "MemberExpression",
-  "object": /* Expression 노드 */,
+  "object": /* Expression 노드 (또는 정적 접근 시 TypeReference 노드) */,
   "property": /* Identifier(속성), FunctionReference(메서드), IndexExpression, LengthLiteral, 또는 Literal(문자열 키) */
 }
 ```
 
 ### Special References (특수 참조)
-`부모`, `바깥` 예약어예요.
+`부모`, `바깥` 예약어
 ```json
 // 부모
 {
@@ -277,16 +322,18 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ```
 
 ### FunctionReference (함수 참조)
-`<함수명>`
+정적 참조: `<함수명>`
+동적 참조 (리플렉션): `<'변수명'>` 또는 `<"문자열">`
 ```json
 {
   "type": "FunctionReference",
-  "name": "함수명"
+  "name": "함수명", // 정적 참조일 경우 문자열, 동적 참조일 경우 null
+  "expression": /* Expression 노드 (동적 참조일 경우 Identifier나 Literal 등, 정적 참조 시 null) */
 }
 ```
 
 ### ExpressionStatement (수식문)
-`<함수>()를 실행하자`처럼 수식 자체가 하나의 문장(Statement)으로 쓰일 때 사용해요.
+`<함수>()를 실행하자`처럼 수식 자체가 하나의 문장(Statement)으로 쓰일 때 사용된답니다.
 ```json
 {
   "type": "ExpressionStatement",
@@ -299,17 +346,18 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ```json
 {
   "type": "TypeReference",
-  "name": "타입명"
+  "name": "타입명",
+  "typeArgs": [ /* TypeReference 노드 목록 (제네릭 인자, 없으면 빈 목록) */ ]
 }
 ```
 
 ### Literal (기본 리터럴)
-숫자, 문자열 리터럴이에요. (템플릿 제외)
+숫자, 문자열, 논리값(`참`, `거짓`), 널(`비어있음`) 리터럴 (템플릿 제외)
 ```json
 {
   "type": "Literal",
-  "value": 42 /* 평가된 호스트 언어의 원시 값 (Primitive Value) */,
-  "raw": "42" /* 소스 코드 문자열 */
+  "value": 42 /* 평가된 호스트 언어의 원시 값 (예: 42, "안녕", true, false, null) */,
+  "raw": "42" /* 소스 코드 문자열 (예: "42", "\"안녕\"", "참", "비어있음") */
 }
 ```
 
@@ -319,16 +367,16 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 {
   "type": "TemplateLiteral",
   "strings": [ "문자열 ", " 문자열" ],
-  "expressions": [ /* 내포된 Expression 노드 배열 */ ]
+  "expressions": [ /* 내포된 Expression 노드 목록 */ ]
 }
 ```
 
-### ListLiteral (배열)
+### ListLiteral (목록)
 `[1, 2, 3]`
 ```json
 {
   "type": "ListLiteral",
-  "elements": [ /* Expression 노드 배열 */ ]
+  "elements": [ /* Expression 노드 목록 */ ]
 }
 ```
 
@@ -367,11 +415,15 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ## 6. 모듈 및 예외 (Modules & Exceptions)
 
 ### ImportStatement (모듈 가져오기)
-`"모듈명"에서 전부 가져오자`
+`"파일"에서 전부 가져오자` 또는 `[모듈]에서 <함수>와 <함수2>를 가져오자`
 ```json
 {
   "type": "ImportStatement",
-  "module": "모듈명"
+  "module": {
+    "kind": "user", // "user" (문자열 리터럴 파일) 또는 "builtin" (타입 리터럴 내장 모듈)
+    "name": "파일이나모듈명"
+  },
+  "imports": null // 전부 가져올 때는 null, 특정 항목만 가져올 때는 목록 ["함수명", "변수명"]
 }
 ```
 
@@ -380,13 +432,20 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ```json
 {
   "type": "TryStatement",
-  "block": [ /* Statement 노드 배열 (try 블록) */ ],
-  "handler": {
-    "type": "CatchClause",
-    "param": { "type": "Identifier", "name": "에러식별자명" }, // 에러 객체가 바인딩될 Identifier 노드
-    "body": [ /* Statement 노드 배열 (catch 블록) */ ]
-  }, // 오류 처리 블록이 없으면 null
-  "finalizer": [ /* Statement 노드 배열 (finally 블록) */ ] // 없으면 null
+  "block": [ /* Statement 노드 목록 (try 블록) */ ],
+  "handlers": [ /* CatchClause 노드 배열 (순서대로 평가됨) */ ],
+  "finalizer": [ /* Statement 노드 목록 (finally 블록) */ ] // 없으면 null
+}
+```
+
+### CatchClause (개별 예외 처리 블록)
+`[오류타입]이 발생했다면 ('에러'):` 또는 `오류가 발생했다면 ('에러'):`
+```json
+{
+  "type": "CatchClause",
+  "catchType": { "type": "TypeReference", "name": "오류타입" }, // 타입 지정이 없으면 null (모든 예외를 잡음)
+  "param": { "type": "Identifier", "name": "에러식별자명" },
+  "body": [ /* Statement 노드 목록 */ ]
 }
 ```
 
