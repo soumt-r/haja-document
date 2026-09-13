@@ -23,13 +23,20 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
   const varMatch = context.matchBefore(/'[\uAC00-\uD7A3a-zA-Z_]*/);
   const typeMatch = context.matchBefore(/\[[\uAC00-\uD7A3a-zA-Z_]*/);
   const propMatch = context.matchBefore(/<[\uAC00-\uD7A3a-zA-Z_]*/);
+  const particleMatch = context.matchBefore(/의\s*$/); // When user types "의 "
 
   if (varMatch && (!word || varMatch.from < word.from)) { word = varMatch; isVar = true; }
   else if (typeMatch && (!word || typeMatch.from < word.from)) { word = typeMatch; isType = true; }
   else if (propMatch && (!word || propMatch.from < word.from)) { word = propMatch; isProp = true; }
+  else if (particleMatch) {
+    // If we just matched '의 ' but no '<', we create an empty word at cursor to insert property
+    word = { from: context.pos, to: context.pos, text: "" };
+    isProp = true;
+    isVar = true; // allow variables too (e.g. '길이')
+  }
 
   if (!word) return null;
-  if (word.from === word.to && !context.explicit) return null;
+  if (word.from === word.to && !context.explicit && !particleMatch) return null;
 
   const doc = context.state.doc.toString();
   const options: any[] = [];
@@ -41,18 +48,12 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
     }
   }
 
-  // To tolerate lexer errors (like unclosed quotes while typing),
-  // we catch the error but still use whatever tokens were successfully parsed.
   let tokens: any[] = [];
   try {
     const lexer = new Lexer(doc);
     tokens = lexer.tokens;
-  } catch (e: any) {
-    // lexer might not expose tokens if it threw in constructor.
-    // Let's do a fallback regex scan on the raw document!
-  }
+  } catch (e: any) {}
 
-  // Fallback regex scan for robust autocompletion even with broken syntax
   const varRegex = /'([\uAC00-\uD7A3a-zA-Z0-9_]+)'/g;
   const typeRegex = /\[([\uAC00-\uD7A3a-zA-Z0-9_]+)\]/g;
   const propRegex = /<([\uAC00-\uD7A3a-zA-Z0-9_]+)>/g;
@@ -77,6 +78,23 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
     if (!seen.has(val)) {
       seen.add(val);
       if (isProp || (!isVar && !isType)) options.push({ label: val, type: "method" });
+    }
+  }
+
+  // Pre-populate built-in string/list methods if isProp is true
+  if (isProp) {
+    const builtins = ["<자르기>", "<바꾸기>", "<분리하기>", "<포함확인>", "<추가하자>", "<꺼내자>"];
+    if (isVar) {
+      if (!seen.has("'길이'")) {
+        seen.add("'길이'");
+        options.push({ label: "'길이'", type: "variable" });
+      }
+    }
+    for (const b of builtins) {
+      if (!seen.has(b)) {
+        seen.add(b);
+        options.push({ label: b, type: "method" });
+      }
     }
   }
 

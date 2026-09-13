@@ -22,9 +22,10 @@ const { title, customMaxWidth = "max-w-3xl" } = Astro.props;
   </head>
   <body class="bg-[#FAFAFA] text-zinc-900 font-['Pretendard'] antialiased selection:bg-black selection:text-white min-h-screen flex flex-col">
     <header class={`w-full ${customMaxWidth} mx-auto px-6 py-12 flex items-center justify-between`}>
-      <a href="/" class="text-xl font-bold tracking-tight hover:opacity-70 transition-opacity">
-        하자 <span class="font-light text-zinc-400">Haja</span>
-      </a>
+      <a href="/" class="flex items-center gap-2 text-xl font-bold tracking-tight hover:opacity-70 transition-opacity">
+          <img src="/favicon.svg" alt="Haja Logo" class="w-7 h-7" />
+          <span>하자 <span class="font-light text-zinc-400">Haja</span></span>
+        </a>
       <nav class="flex gap-6 text-sm font-medium text-zinc-500">
         <a href="/playground" class="hover:text-black transition-colors font-semibold text-blue-600">놀이터(실행기)</a>
         <a href="/docs/intro" class="hover:text-black transition-colors">문서</a>
