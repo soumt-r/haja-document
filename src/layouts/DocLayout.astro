@@ -95,6 +95,7 @@ const navItems = [
     import { runHaja } from '../utils/haja';
     import { EditorView, basicSetup } from "codemirror";
     import { hajaLanguage } from '../utils/haja/cm-language';
+      import { hajaLinter, hajaAutocomplete } from '../utils/haja/hajaLSP';
 
     document.addEventListener("DOMContentLoaded", () => {
 
@@ -153,6 +154,8 @@ const createInputCallback = (outputContainer) => (promptText) => {
             extensions: [
               basicSetup,
               hajaLanguage,
+              hajaLinter,
+              hajaAutocomplete,
               EditorView.lineWrapping,
               EditorView.theme({
                 "&": { height: "100%", fontSize: "14.5px" },
@@ -310,7 +313,9 @@ const createInputCallback = (outputContainer) => (promptText) => {
           doc: rawCode,
           extensions: [
             basicSetup,
-            hajaLanguage,
+              hajaLanguage,
+              hajaLinter,
+              hajaAutocomplete,
             EditorView.lineWrapping,
             EditorView.theme({
               "&": { height: "auto", maxHeight: "400px" },
