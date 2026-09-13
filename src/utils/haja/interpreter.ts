@@ -233,11 +233,18 @@ export class HajaInterpreter {
     const t = stmt.type;
 
     if (t === 'VariableDeclaration') {
-        const val = stmt.value ? await this.evaluate(stmt.value, env) : null;
-        this.check_type(val, stmt.typeAnnotation);
-        if (stmt.target.type === 'Identifier') {
-          env.declare(stmt.target.name, val, stmt.isConst || false);
-        }
+          const val = stmt.value ? await this.evaluate(stmt.value, env) : null;
+          this.check_type(val, stmt.typeAnnotation);
+          if (stmt.isStatic && env.has('우리')) {
+             const clsObj = env.get('우리');
+             if (clsObj && clsObj.type === 'TypeReference' && this.static_props[clsObj.name]) {
+                 this.static_props[clsObj.name][stmt.target.name] = val;
+                 return;
+             }
+          }
+          if (stmt.target.type === 'Identifier') {
+            env.declare(stmt.target.name, val, stmt.isConst || false);
+          }
     } else if (t === 'Assignment') {
       const val = stmt.value ? await this.evaluate(stmt.value, env) : null;
       const tgt = stmt.target;
