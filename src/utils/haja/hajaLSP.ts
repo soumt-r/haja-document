@@ -19,20 +19,23 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
   let isVar = false;
   let isType = false;
   let isProp = false;
+  let needsPrefixSpace = false;
 
   const varMatch = context.matchBefore(/'[\uAC00-\uD7A3a-zA-Z_]*/);
   const typeMatch = context.matchBefore(/\[[\uAC00-\uD7A3a-zA-Z_]*/);
   const propMatch = context.matchBefore(/<[\uAC00-\uD7A3a-zA-Z_]*/);
-  const particleMatch = context.matchBefore(/의\s*$/); // When user types "의 "
+  const particleMatch = context.matchBefore(/의\s*$/);
 
   if (varMatch && (!word || varMatch.from < word.from)) { word = varMatch; isVar = true; }
   else if (typeMatch && (!word || typeMatch.from < word.from)) { word = typeMatch; isType = true; }
   else if (propMatch && (!word || propMatch.from < word.from)) { word = propMatch; isProp = true; }
   else if (particleMatch) {
-    // If we just matched '의 ' but no '<', we create an empty word at cursor to insert property
     word = { from: context.pos, to: context.pos, text: "" };
     isProp = true;
-    isVar = true; // allow variables too (e.g. '길이')
+    isVar = true;
+    if (!particleMatch.text.match(/\s$/)) {
+      needsPrefixSpace = true;
+    }
   }
 
   if (!word) return null;
@@ -44,7 +47,15 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
 
   if (!isVar && !isType && !isProp) {
     for (const kw of keywords) {
-      options.push({ label: kw, type: "keyword" });
+      // For general keywords, if the user selects them, we can append a space to make typing smoother!
+      // But only if it doesn't already have one? Actually just appending a space is nice for keywords like '만약', '출력하자'
+      let applyStr = kw;
+      if (["만약", "그렇지 않고", "그리고", "또는", "처음 만들어질 때", "돌려주는"].includes(kw)) {
+        applyStr = kw + " ";
+      } else if (["설계하자", "일단 해보자", "마무리는 항상", "그렇지 않다면"].includes(kw)) {
+        applyStr = kw + ":\n    ";
+      }
+      options.push({ label: kw, type: "keyword", apply: applyStr });
     }
   }
 
@@ -63,37 +74,36 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
     const val = "'" + match[1] + "'";
     if (!seen.has(val)) {
       seen.add(val);
-      if (isVar || (!isType && !isProp)) options.push({ label: val, type: "variable" });
+      if (isVar || (!isType && !isProp)) options.push({ label: val, type: "variable", apply: (needsPrefixSpace ? " " : "") + val });
     }
   }
   while ((match = typeRegex.exec(doc)) !== null) {
     const val = "[" + match[1] + "]";
     if (!seen.has(val)) {
       seen.add(val);
-      if (isType || (!isVar && !isProp)) options.push({ label: val, type: "class" });
+      if (isType || (!isVar && !isProp)) options.push({ label: val, type: "class", apply: (needsPrefixSpace ? " " : "") + val });
     }
   }
   while ((match = propRegex.exec(doc)) !== null) {
     const val = "<" + match[1] + ">";
     if (!seen.has(val)) {
       seen.add(val);
-      if (isProp || (!isVar && !isType)) options.push({ label: val, type: "method" });
+      if (isProp || (!isVar && !isType)) options.push({ label: val, type: "method", apply: (needsPrefixSpace ? " " : "") + val });
     }
   }
 
-  // Pre-populate built-in string/list methods if isProp is true
-  if (isProp) {
+  if (isProp || isVar) {
     const builtins = ["<자르기>", "<바꾸기>", "<분리하기>", "<포함확인>", "<추가하자>", "<꺼내자>"];
-    if (isVar) {
-      if (!seen.has("'길이'")) {
-        seen.add("'길이'");
-        options.push({ label: "'길이'", type: "variable" });
-      }
-    }
     for (const b of builtins) {
       if (!seen.has(b)) {
         seen.add(b);
-        options.push({ label: b, type: "method" });
+        if (isProp) options.push({ label: b, type: "method", apply: (needsPrefixSpace ? " " : "") + b });
+      }
+    }
+    if (isVar) {
+      if (!seen.has("'길이'")) {
+        seen.add("'길이'");
+        options.push({ label: "'길이'", type: "variable", apply: (needsPrefixSpace ? " " : "") + "'길이'" });
       }
     }
   }
