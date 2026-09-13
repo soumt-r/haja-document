@@ -337,14 +337,29 @@ export class HajaInterpreter {
       this.inline_buffer += val;
       if (this.outputCallback) this.outputCallback(val);
     } else if (t === 'InputStatement') {
-      const target = stmt.target.name;
-      const typeAnn = stmt.typeAnnotation ? stmt.typeAnnotation.name : '문자열';
-      let user_input = "";
-      if (this.inputCallback) {
-        user_input = await this.inputCallback("") || "";
-      } else {
-        user_input = prompt(`입력 (${typeAnn}): `) || "";
-      }
+        const target = stmt.target.name;
+        const typeAnn = stmt.typeAnnotation ? stmt.typeAnnotation.name : '문자열';
+        let user_input = "";
+        
+        if (!['문자열', '숫자', '논리'].includes(typeAnn)) {
+            throw new Error(`UnsupportedInputTypeError: '${typeAnn}' 타입은 입력으로 받을 수 없어요.`);
+        }
+        
+        if (this.inputCallback) {
+          user_input = await this.inputCallback("") || "";
+        } else {
+          user_input = prompt(`입력 (${typeAnn}): `) || "";
+        }
+        
+        let final_val: any = user_input;
+        if (typeAnn === '숫자') {
+            final_val = Number(user_input);
+            if (isNaN(final_val)) throw new Error(`InputConversionError: '${user_input}'은(는) 숫자로 바꿀 수 없어요.`);
+        } else if (typeAnn === '논리') {
+            if (user_input === '참') final_val = true;
+            else if (user_input === '거짓') final_val = false;
+            else throw new Error(`InputConversionError: '${user_input}'은(는) 참/거짓으로 바꿀 수 없어요.`);
+        }
 
       this.inline_buffer = "";
       
