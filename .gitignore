@@ -19,3 +19,11 @@ pnpm-debug.log*
 
 # macOS-specific files
 .DS_Store
+
+# Scratch / debug artifacts — never commit these. If you need a throwaway
+# script or test file during development, keep it untracked (covered by
+# these patterns) rather than committing it.
+debug_*.*
+patch*.py
+test_results.txt
+test_ts.ts
