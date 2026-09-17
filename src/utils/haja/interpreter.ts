@@ -337,7 +337,7 @@ export class HajaInterpreter {
       const val = this.format_value(await this.evaluate(stmt.value, env));
       const line = this.inline_buffer + val;
       this.output.push(line);
-      if (this.outputCallback) this.outputCallback(line + "\n");
+      if (this.outputCallback) this.outputCallback(val + "\n");
       this.inline_buffer = "";
     } else if (t === 'PrintInlineStatement') {
       const val = this.format_value(await this.evaluate(stmt.value, env));
