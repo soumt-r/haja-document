@@ -115,7 +115,7 @@ export class Lexer {
         continue;
       }
       
-      line = line.replace(/\s*\(?(참고|주석|메모)(:|\)| ).*$/, '');
+      line = line.replace(/(^|\s+)\(?(참고|주석|메모)(:|\)| ).*$/, '');
 
       const indent_match = line.match(/^[ \t]*/);
       const current_indent = indent_match ? indent_match[0].length : 0;

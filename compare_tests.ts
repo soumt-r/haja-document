@@ -6,7 +6,7 @@ import { Parser } from './src/utils/haja/parser.ts';
 import { HajaInterpreter as Interpreter } from './src/utils/haja/interpreter.ts';
 
 const DOCS_DIR = './src/pages/docs';
-const GO_EXECUTABLE = '../hana/hana.exe';
+const GO_EXECUTABLE = '..\\hana\\hana.exe';
 
 function extractHajaBlocks(markdown: string): string[] {
     const blocks: string[] = [];
@@ -22,12 +22,12 @@ async function runTypeScriptEngine(code: string): Promise<string> {
     let output = "";
     try {
         const lexer = new Lexer(code);
-        const parser = new Parser(lexer);
+        const parser = new Parser(lexer.tokens);
         const ast = parser.parse_program();
-        const interpreter = new Interpreter(ast);
+        const interpreter = new Interpreter(ast, async () => "");
         
-        interpreter.onPrint = (msg) => {
-            output += msg + "\n";
+        interpreter.outputCallback = (msg) => {
+            output += msg;
         };
         await interpreter.run();
     } catch (e: any) {
@@ -101,3 +101,8 @@ async function main() {
 }
 
 main().catch(console.error);
+
+
+
+
+
