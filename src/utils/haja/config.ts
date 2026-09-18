@@ -3,6 +3,7 @@
 // JapaneseConfig equivalent instead) — no runtime language switching inside
 // one repo, per the "구조만 미러링, 레포는 분리" decision.
 import type { Expression } from "./ast";
+import type { Locale } from "./errs";
 
 export interface LangConfig {
   builtinToString: string;
@@ -52,6 +53,11 @@ export interface LangConfig {
   // never match (verified against hana.exe).
   equalsMethodName: string;
 
+  // locale picks the wording errs.localize renders a runtime error in wherever
+  // it becomes user-visible text (a `발생했다면` handler's caught message, the
+  // Playground's error output). Mirrors vm.LangConfig.Locale.
+  locale: Locale;
+
   // parseEmbeddedExpr lexes+parses a `{...}` template-string interpolation's
   // inner code with this language's full grammar. Left undefined for a repo
   // whose evalExpr.ts hardcodes its own Lexer/Parser instead (see this
@@ -99,4 +105,5 @@ export const KoreanConfig: LangConfig = {
   stringSplitMethod: "분리하기",
   stringContainsMethod: "포함확인",
   equalsMethodName: "기호 같다",
+  locale: "ko",
 };
