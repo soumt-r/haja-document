@@ -141,8 +141,8 @@ export async function executeStmt(i: HajaInterpreter, stmt: ast.Statement, env: 
         if (Number.isNaN(num)) throw new Error(`InputConversionError: '${userInput}'은(는) 숫자로 바꿀 수 없어요.`);
         val = num;
       } else if (typeAnn === "논리") {
-        if (userInput === "참") val = true;
-        else if (userInput === "거짓") val = false;
+        if (userInput === i.config.trueString) val = true;
+        else if (userInput === i.config.falseString) val = false;
         else throw new Error(`InputConversionError: '${userInput}'은(는) 참/거짓으로 바꿀 수 없어요.`);
       }
 

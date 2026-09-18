@@ -8,7 +8,6 @@ import * as ast from "./ast";
 import * as tok from "./token";
 import type { Token } from "./token";
 import { Lexer } from "./lexer";
-import { HajaError } from "./errors";
 import { hajaProfile, literalIn, LoopKind, type Component, type LangProfile } from "./langProfile";
 
 export class Parser {
