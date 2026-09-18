@@ -29,3 +29,12 @@ Consult these guides before working on related tasks:
   `.gitignore`에 이미 패턴이 등록되어 있습니다.
 - `compare_tests.ts`(TS 엔진 vs `../hana` Go 엔진 출력 비교 도구)는 유지보수 가치가 있는
   실제 도구입니다 — 위 규칙과 혼동해 지우지 마세요.
+
+## 엔진 에러 문구 (생성 파일 주의)
+
+`src/utils/haja/errCatalog.ts`는 `../hana`(Go)의 `errs` 카탈로그에서 **생성되는 파일**이라
+직접 고치지 마세요. 에러 문구를 바꾸려면 `hana/errs/{ko,ja,en}.go`를 고치고
+`cd ../hana && go run ./cmd/errsgen ../haja-docs/src/utils/haja/errCatalog.ts ../kanade-docs/src/utils/kanade/errCatalog.ts`
+로 두 저장소 파일을 함께 다시 만드세요 (`-check`를 앞에 붙이면 오래됐는지만 확인).
+엔진에서 에러를 던질 때는 `throw new RuntimeError(Codes.X, ...)`(`errs.ts`)를 쓰고 한국어/영어 리터럴을 직접 쓰지 마세요.
+`compare_tests.ts`는 Go 엔진과 출력뿐 아니라 최종 에러 문구도 비교합니다.
