@@ -1,14 +1,20 @@
-import { Lexer } from './lexer';
-import { Parser } from './parser';
-import { HajaInterpreter } from './interpreter';
-import { HajaError, HajaRuntimeError } from './types';
+import { Lexer } from "./lexer";
+import { Parser } from "./parser";
+import { HajaInterpreter } from "./interpreter";
+import { HajaError, HajaRuntimeError } from "./errors";
+import { registerStandardLibrary } from "./stdlib";
 
-export async function runHaja(code: string, inputCallback?: (promptText: string) => Promise<string>, outputCallback?: (msg: string) => void): Promise<string> {
+export async function runHaja(
+  code: string,
+  inputCallback?: (promptText: string) => Promise<string>,
+  outputCallback?: (msg: string) => void,
+): Promise<string> {
   try {
     const lexer = new Lexer(code);
     const parser = new Parser(lexer.tokens);
-    const ast = parser.parse_program();
+    const ast = parser.parseProgram();
     const interpreter = new HajaInterpreter(ast, inputCallback, outputCallback);
+    registerStandardLibrary(interpreter);
     return await interpreter.run();
   } catch (e: any) {
     if (e instanceof HajaError) {

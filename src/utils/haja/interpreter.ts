@@ -1,1175 +1,196 @@
-import { HajaRuntimeError, BreakLoop, ReturnValue, type ASTNode } from './types';
-import { Lexer } from './lexer';
-import { Parser } from './parser';
-
-export class Environment {
-  parent: Environment | null;
-  vars: Record<string, any>;
-  constants: Set<string>;
-  
-  constructor(parent: Environment | null = null) {
-    this.parent = parent;
-    this.vars = {};
-    this.constants = new Set();
-  }
-
-  declare(name: string, value: any, isConst: boolean = false) {
-    if (this.vars[name] !== undefined) {
-      if (this.constants.has(name)) {
-        throw new Error(`ConstantAssignmentError: 상수 '${name}'의 값은 바꿀 수 없어요.`);
-      }
-    }
-    this.vars[name] = value;
-    if (isConst) this.constants.add(name);
-  }
-  
-  assign(name: string, value: any) {
-    if (this.constants.has(name)) {
-      throw new Error(`ConstantAssignmentError: 상수 '${name}'의 값은 바꿀 수 없어요.`);
-    }
-    if (this.vars[name] !== undefined) {
-      this.vars[name] = value;
-      return;
-    }
-    if (this.parent) {
-      this.parent.assign(name, value);
-      return;
-    }
-    throw new Error(`ReferenceError: 아직 준비되지 않은 변수 '${name}'에 값을 넣으려고 했어요.`);
-  }
-
-  get(name: string): any {
-    let env: Environment | null = this;
-    while (env) {
-      if (name in env.vars) {
-        return env.vars[name];
-      }
-      env = env.parent;
-    }
-    return undefined;
-  }
-  
-  getOuter(name: string): any {
-    if (this.parent) {
-      return this.parent.get(name);
-    }
-    return undefined;
-  }
-  
-  assignOuter(name: string, value: any) {
-    if (this.parent) {
-      this.parent.assign(name, value);
-    } else {
-      throw new Error(`ReferenceError: 바깥 범위에서 '${name}'(을)를 찾을 수 없어요.`);
-    }
-  }
-  
-  has(name: string): boolean {
-    let env: Environment | null = this;
-    while (env) {
-      if (name in env.vars) return true;
-      env = env.parent;
-    }
-    return false;
-  }
-}
-
-export class HajaObject {
-  cls_name: string;
-  props: Record<string, any>;
-
-  constructor(cls_name: string) {
-    this.cls_name = cls_name;
-    this.props = {};
-  }
-
-  toString() {
-    return `[${this.cls_name} 객체]`;
-  }
-}
+// Mirrors hana/vm/interpreter.go's Interpreter: NewInterpreter, Run()
+// (declaration collection -> interface pre-flight validation -> execution),
+// FormatValue. Constructor also takes the browser Playground's
+// inputCallback/outputCallback (Go's interpreter has no such concept — it
+// prints straight to stdout — so these two fields plus `inlineBuffer` are
+// this port's one addition beyond a structural mirror, carried over from the
+// previous ad hoc engine to keep index.ts's public contract unchanged).
+import * as ast from "./ast";
+import { Environment } from "./env";
+import { HajaObject } from "./object";
+import { type LangConfig, KoreanConfig } from "./config";
+import { evaluateNode } from "./evalExpr";
+import { executeStmt } from "./execStmt";
+import { HajaRuntimeError } from "./errors";
+import { BuiltinFunction, type BuiltinFn, type NativeModule } from "./object";
 
 export class HajaInterpreter {
-  ast: ASTNode;
-  env: Environment;
-  classes: Record<string, ASTNode>;
-  static_props: Record<string, Record<string, any>>;
-  interfaces: Record<string, ASTNode>;
-  functions: Record<string, ASTNode>;
-  output: string[];
-  inline_buffer: string;
+  ast: ast.Program;
+  globalEnv: Environment;
+  classes: Record<string, ast.ClassDeclaration> = {};
+  interfaces: Record<string, ast.InterfaceDeclaration> = {};
+  output: string[] = [];
+  config: LangConfig;
+  nativeModules: Record<string, NativeModule> = {};
+  inlineBuffer = "";
   inputCallback?: (promptText: string) => Promise<string>;
-
   outputCallback?: (msg: string) => void;
-  constructor(ast: ASTNode, inputCallback?: (promptText: string) => Promise<string>, outputCallback?: (msg: string) => void) {
-    this.outputCallback = outputCallback;
+
+  constructor(
+    prog: ast.Program,
+    inputCallback?: (promptText: string) => Promise<string>,
+    outputCallback?: (msg: string) => void,
+    config: LangConfig = KoreanConfig,
+  ) {
+    this.ast = prog;
+    this.globalEnv = new Environment(null);
+    this.config = config;
     this.inputCallback = inputCallback;
-    this.ast = ast;
-    this.env = new Environment();
-    this.classes = {};
-    this.static_props = {};
-    this.interfaces = {};
-    this.functions = {};
-    this.output = [];
-    this.inline_buffer = "";
+    this.outputCallback = outputCallback;
+    this.classes[config.builtinErrorClass] = newBuiltinErrorClass(config);
+  }
+
+  // Mirrors Interpreter.RegisterBuiltin/RegisterNativeModule — stdlib.ts's
+  // registerStandardLibrary calls these the same way hana/stdlib's
+  // RegisterStandardLibrary calls the Go versions.
+  registerBuiltin(name: string, fn: BuiltinFn): void {
+    this.globalEnv.declare(name, new BuiltinFunction(name, fn));
+  }
+
+  registerNativeModule(name: string, module: NativeModule): void {
+    this.nativeModules[name] = module;
   }
 
   async run(): Promise<string> {
-    for (const stmt of this.ast.body) {
-      if (stmt.type === 'ClassDeclaration') {
-        this.classes[stmt.id] = stmt;
-        this.static_props[stmt.id] = {};
-        for (const s of stmt.body) {
-          if (s.type === 'VariableDeclaration' && s.isStatic) {
-            this.static_props[stmt.id][s.target.name] = s.value ? await this.evaluate(s.value, this.globalEnv) : null;
-          }
-        }
-      } else if (stmt.type === 'InterfaceDeclaration') {
-        this.interfaces[stmt.id] = stmt;
-      } else if (stmt.type === 'FunctionDeclaration') {
-        this.functions[stmt.id] = stmt;
+    // 1. 선언부 수집
+    for (const stmt of this.ast.statements) {
+      if (stmt.type === "ClassDeclaration") {
+        this.classes[stmt.name.name] = stmt;
+      }
+      if (stmt.type === "InterfaceDeclaration") {
+        this.interfaces[stmt.name.name] = stmt;
       }
     }
 
-    // Verify Interfaces
+    // 2. 인터페이스 검증 (Pre-flight Validation)
     for (const clsName in this.classes) {
       const cls = this.classes[clsName];
-      for (let ifaceName of (cls.interfaces || [])) {
-        if (typeof ifaceName === 'object' && ifaceName.name) ifaceName = ifaceName.name;
-        const iface = this.interfaces[ifaceName];
-        if (!iface) throw new HajaRuntimeError(`InterfaceImplementationError: 인터페이스 '${ifaceName}'를 찾을 수 없어요.`, cls.line);
-        for (const req of iface.body) {
-          if (req.type === 'InterfaceMethod') {
-            const hasMethod = cls.body.some((s: any) => s.type === 'FunctionDeclaration' && s.id === req.id);
-            if (!hasMethod) throw new HajaRuntimeError(`InterfaceImplementationError: 클래스 '${cls.id}'는 약속된 '${req.id}' 기능을 꼭 만들어야 해요.`, cls.line);
+      for (const ifaceRef of cls.interfaces) {
+        const iface = this.interfaces[ifaceRef.name];
+        if (!iface) continue;
+        for (const reqStmt of iface.body) {
+          if (reqStmt.type === "InterfaceMethod") {
+            const implemented = cls.body.some(
+              (clsStmt) => clsStmt.type === "FunctionDeclaration" && clsStmt.name.value === reqStmt.name.value,
+            );
+            if (!implemented) {
+              throw new HajaRuntimeError(
+                `InterfaceImplementationError: Class '${clsName}' must implement method '${reqStmt.name.value}' of the interface.`,
+              );
+            }
           }
         }
       }
     }
 
-    for (const stmt of this.ast.body) {
-      if (!['ClassDeclaration', 'InterfaceDeclaration', 'FunctionDeclaration'].includes(stmt.type)) {
-        await this.execute(stmt, this.env);
+    // 3. 실행
+    try {
+      for (const stmt of this.ast.statements) {
+        if (stmt.type === "ClassDeclaration") {
+          for (const clsStmt of stmt.body) {
+            if (clsStmt.type === "VariableDeclaration" && clsStmt.isStatic) {
+              const val = await evaluateNode(this, clsStmt.value, this.globalEnv);
+              this.globalEnv.declare(`${stmt.name.name}.${clsStmt.name.value}`, val);
+            } else if (clsStmt.type === "Assignment" && clsStmt.target.type === "MemberExpression") {
+              const mem = clsStmt.target;
+              if (mem.object.type === "Identifier" && this.config.pluralSelfWords.includes(mem.object.value)) {
+                if (mem.property.type === "Identifier") {
+                  const val = await evaluateNode(this, clsStmt.value, this.globalEnv);
+                  this.globalEnv.declare(`${stmt.name.name}.${mem.property.value}`, val);
+                }
+              }
+            }
+          }
+        } else if (stmt.type === "InterfaceDeclaration") {
+          // 스킵
+        } else {
+          await executeStmt(this, stmt, this.globalEnv);
+        }
       }
+    } catch (e) {
+      if (e instanceof HajaRuntimeError) throw e;
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new HajaRuntimeError(msg);
     }
-    
-    if (this.inline_buffer !== "") {
-      this.output.push(this.inline_buffer);
+
+    if (this.inlineBuffer !== "") {
+      this.output.push(this.inlineBuffer);
     }
     return this.output.join("\n");
   }
 
-  format_value(val: any): string {
-    if (val === null || val === undefined) return "비어있음";
-    if (typeof val === 'boolean') return val ? "참" : "거짓";
-    if (Array.isArray(val)) return "[" + val.map(v => this.format_value(v)).join(", ") + "]";
-    if (typeof val === 'object' && !(val instanceof HajaObject)) {
-      const entries = Object.entries(val).map(([k, v]) => `"${k}": ${this.format_value(v)}`);
+  formatValue(val: unknown): string {
+    if (val === null || val === undefined) return this.config.nullString;
+    if (typeof val === "string") return val;
+    if (val instanceof HajaObject) return this.config.objectFormat.replace("%s", val.className);
+    if (typeof val === "boolean") return val ? this.config.trueString : this.config.falseString;
+    if (Array.isArray(val)) return "[" + val.map((el) => this.formatValue(el)).join(", ") + "]";
+    if (val instanceof Map) {
+      const entries = Array.from(val.entries()).map(([k, v]) => `${this.formatValue(k)}: ${this.formatValue(v)}`);
       return "{" + entries.join(", ") + "}";
+    }
+    if (typeof val === "number") {
+      // Go 쪽은 %v/%g가 3628800 같은 값도 과학적 표기법으로 바꿔버려서
+      // strconv.FormatFloat(v, 'f', -1, 64)로 직접 처리해야 했지만, JS의
+      // 기본 String(number)는 1e21 미만에서는 과학적 표기법을 쓰지 않으므로
+      // 별도 처리가 필요 없다.
+      return String(val);
     }
     return String(val);
   }
-
-  async execute(stmt: ASTNode, env: Environment): Promise<any> {
-    try {
-      return await this._do_execute(stmt, env);
-    } catch (e: any) {
-      if (e.name === 'ReturnValue' || e.name === 'HajaRuntimeError' || e.name === 'BreakLoop') {
-        throw e;
-      }
-      const line = stmt.line || '?';
-      throw new HajaRuntimeError(`[${line}번째 줄] ${e.message || String(e)}`, line as number);
-    }
-  }
-
-  
-  check_type(val: any, ann: any) {
-    if (!ann || ann.type !== 'TypeReference') return;
-    if (val === null || val === undefined) return;
-    const tname = ann.name;
-    if (tname === '아무거나') return;
-    if (tname === '문자열' && typeof val !== 'string') throw new Error(`TypeError: 값이 문자열 타입이 아니에요.`);
-    if (tname === '숫자' && typeof val !== 'number') throw new Error(`TypeError: 값이 숫자 타입이 아니에요.`);
-    if (tname === '논리' && typeof val !== 'boolean') throw new Error(`TypeError: 값이 논리(참/거짓) 타입이 아니에요.`);
-    if (tname === '목록' || tname === '배열') {
-      if (!Array.isArray(val)) throw new Error(`TypeError: 값이 목록 타입이 아니에요.`);
-      if (ann.typeArgs && ann.typeArgs.length > 0) {
-        for (const item of val) this.check_type(item, ann.typeArgs[0]);
-      }
-      return;
-    }
-    if (tname === '사전') {
-      if (typeof val !== 'object' || Array.isArray(val) || val instanceof HajaObject) throw new Error(`TypeError: 값이 사전 타입이 아니에요.`);
-      if (ann.typeArgs && ann.typeArgs.length === 2) {
-        for (const v of Object.values(val)) this.check_type(v, ann.typeArgs[1]);
-      }
-      return;
-    }
-    if (val instanceof HajaObject) {
-       let clsName: string | null = val.cls_name;
-       let matched = false;
-       while (clsName) {
-         if (clsName === tname) { matched = true; break; }
-         const c = this.classes[clsName];
-         clsName = c && c.baseClass ? (c.baseClass.name || c.baseClass) : null;
-       }
-       if (!matched) {
-         let currentCls: string | null = val.cls_name;
-         while (currentCls) {
-           const c = this.classes[currentCls];
-           if (c && c.interfaces) {
-             for (const iface of c.interfaces) {
-               if ((iface.name || iface) === tname) { matched = true; break; }
-             }
-           }
-           if (matched) break;
-           currentCls = c && c.baseClass ? (c.baseClass.name || c.baseClass) : null;
-         }
-       }
-       if (!matched) throw new Error(`TypeError: 값이 ${tname} 타입이 아니에요.`);
-    }
-  }
-
-  async _do_execute(stmt: ASTNode, env: Environment): Promise<any> {
-    const t = stmt.type;
-
-    if (t === 'VariableDeclaration') {
-          const val = stmt.value ? await this.evaluate(stmt.value, env) : null;
-          this.check_type(val, stmt.typeAnnotation);
-          if (stmt.isStatic && env.has('우리')) {
-             const clsObj = env.get('우리');
-             if (clsObj && clsObj.type === 'TypeReference' && this.static_props[clsObj.name]) {
-                 this.static_props[clsObj.name][stmt.target.name] = val;
-                 return;
-             }
-          }
-          if (stmt.target.type === 'Identifier') {
-            env.declare(stmt.target.name, val, stmt.isConst || false);
-          }
-    } else if (t === 'Assignment') {
-      const val = stmt.value ? await this.evaluate(stmt.value, env) : null;
-      const tgt = stmt.target;
-      if (tgt.type === 'Identifier') {
-        env.assign(tgt.name, val);
-      } else if (tgt.type === 'MemberExpression') {
-        if (tgt.object.type === 'TypeReference') {
-          const cname = tgt.object.name;
-          this.static_props[cname][tgt.property.name] = compute(this.static_props[cname][tgt.property.name], val);
-  
-          return;
-        }
-        if (tgt.object.type === 'TypeReference') {
-            const cname = tgt.object.name;
-            this.static_props[cname][tgt.property.name] = val;
-            return;
-          }
-          if (tgt.object.type === 'OuterReference') {
-            env.assignOuter(tgt.property.name, val);
-            return;
-          }
-        const obj = await this.evaluate(tgt.object, env);
-        if (typeof obj === 'string') {
-          throw new Error("ImmutableAssignmentError: 문자열의 일부를 직접 바꿀 수 없어요.");
-        }
-        if (obj instanceof HajaObject) {
-          const propName = tgt.property.name;
-          const expr = null; const stmt = null;
-
-        const find_property_decl = (cname: string): any => {
-          const cast = this.classes[cname];
-          if (!cast) return null;
-          for (const s of cast.body) {
-            if (s.type === 'VariableDeclaration' && s.target.name === propName) return s;
-          }
-          if (cast.baseClass) return find_property_decl(cast.baseClass.name || cast.baseClass);
-          return null;
-        };
-        const decl = find_property_decl(obj.cls_name);
-        if (decl && decl.accessModifier !== 'public' && !(expr && expr.is_fake) && !(stmt && stmt.is_fake)) {
-           if (decl.accessModifier === 'private') {
-             if (env.get('this') !== obj) throw new Error(`AccessViolationError: '${propName}' 속성은 내부 전용(private)이라 외부에서 부를 수 없어요.`);
-           } else if (decl.accessModifier === 'protected') {
-             if (!env.has('this')) throw new Error(`AccessViolationError: '${propName}' 속성은 상속된 클래스 전용(protected)이라 외부에서 부를 수 없어요.`);
-           }
-        }
-
-          const find_setter = (cname: string): any => {
-            const cast = this.classes[cname];
-            if (!cast) return null;
-            for (const s of cast.body) {
-              if (s.type === 'VariableDeclaration' && s.target.name === propName && s.setter) return s.setter;
-            }
-            if (cast.baseClass) return find_setter(cast.baseClass.name || cast.baseClass);
-            return null;
-          };
-          const setter = find_setter(obj.cls_name);
-          if (setter) {
-            const setter_env = new Environment(env);
-            setter_env.declare('this', obj, false);
-            setter_env.declare(setter.param.name, val, false);
-            try {
-              for (const s of setter.body) await this.execute(s, setter_env);
-            } catch (e: any) {
-              if (e.name === 'ReturnValue') return e.value;
-              throw e;
-            }
-            return;
-          }
-          obj.props[propName] = val;
-        } else if (Array.isArray(obj)) {
-          let idx = -1;
-          if (tgt.property.type === 'IndexLiteral') idx = tgt.property.value - 1;
-          else if (tgt.property.type === 'IndexExpression') idx = await this.evaluate(tgt.property.index, env) - 1;
-          else if (tgt.property.type === 'Literal') idx = await this.evaluate(tgt.property, env);
-          
-          if (idx !== -1) {
-            if (t === 'Assignment') obj[idx] = val;
-            else if (t === 'MathAdd') obj[idx] = (obj[idx] || 0) + val;
-            else if (t === 'MathSubtract') obj[idx] = (obj[idx] || 0) - val;
-          }
-        } else if (obj !== null && typeof obj === 'object') {
-          if (tgt.property.type === 'Literal') obj[await this.evaluate(tgt.property, env)] = val;
-          else if (tgt.property.type === 'Identifier') obj[tgt.property.name] = val;
-        }
-      }
-    } else if (t === 'ExpressionStatement') {
-      await this.evaluate(stmt.expression, env);
-    } else if (t === 'PrintStatement') {
-      const val = this.format_value(await this.evaluate(stmt.value, env));
-      const line = this.inline_buffer + val;
-      this.output.push(line);
-      if (this.outputCallback) this.outputCallback(val + "\n");
-      this.inline_buffer = "";
-    } else if (t === 'PrintInlineStatement') {
-      const val = this.format_value(await this.evaluate(stmt.value, env));
-      this.inline_buffer += val;
-      if (this.outputCallback) this.outputCallback(val);
-    } else if (t === 'InputStatement') {
-        const target = stmt.target.name;
-        const typeAnn = stmt.typeAnnotation ? stmt.typeAnnotation.name : '문자열';
-        let user_input = "";
-        
-        if (!['문자열', '숫자', '논리'].includes(typeAnn)) {
-            throw new Error(`UnsupportedInputTypeError: '${typeAnn}' 타입은 입력으로 받을 수 없어요.`);
-        }
-        
-        if (this.inputCallback) {
-          user_input = await this.inputCallback("") || "";
-        } else {
-          user_input = prompt(`입력 (${typeAnn}): `) || "";
-        }
-        
-        let final_val: any = user_input;
-        if (typeAnn === '숫자') {
-            final_val = Number(user_input);
-            if (isNaN(final_val)) throw new Error(`InputConversionError: '${user_input}'은(는) 숫자로 바꿀 수 없어요.`);
-        } else if (typeAnn === '논리') {
-            if (user_input === '참') final_val = true;
-            else if (user_input === '거짓') final_val = false;
-            else throw new Error(`InputConversionError: '${user_input}'은(는) 참/거짓으로 바꿀 수 없어요.`);
-        }
-
-      this.inline_buffer = "";
-      
-      let val: any = user_input;
-      if (typeAnn === '숫자') {
-         val = Number(user_input);
-         if (isNaN(val)) val = 0;
-      } else if (typeAnn === '논리') {
-         val = (user_input === '참' || user_input === 'true');
-      }
-      try {
-        env.assign(target, val);
-      } catch (e) {
-        env.declare(target, val, false);
-      }
-    } else if (t === 'CompoundAssignment') {
-      const tgt = stmt.target;
-      const val = await this.evaluate(stmt.value, env);
-      const op = stmt.operator;
-      
-      const compute = (a: any, b: any) => {
-        if (a === undefined || a === null) a = 0;
-        if (op === '+=') {
-          if (typeof a === 'string' || typeof b === 'string') {
-            if (typeof a !== 'string' || typeof b !== 'string') throw new Error("TypeError: 문자열과 다른 타입을 더할 수 없어요.");
-          }
-          return a + b;
-        } else if (op === '-=') {
-          return a - b;
-        } else if (op === '*=') {
-          return a * b;
-        } else if (op === '/=') {
-          if (b === 0) throw new Error("DivideByZeroError: 0으로 나눌 수 없어요.");
-          return a / b;
-        }
-        return a; // fallback
-      };
-      
-      if (tgt.type === 'Identifier') {
-        env.assign(tgt.name, compute(env.get(tgt.name), val));
-      } else if (tgt.type === 'MemberExpression') {
-        if (tgt.object.type === 'TypeReference') {
-          const cname = tgt.object.name;
-          this.static_props[cname][tgt.property.name] = compute(this.static_props[cname][tgt.property.name], val);
-  
-          return;
-        }
-        if (tgt.object.type === 'OuterReference') {
-          env.assignOuter(tgt.property.name, compute(env.getOuter(tgt.property.name), val));
-          return;
-        }
-        const obj = await this.evaluate(tgt.object, env);
-        if (obj && typeof obj === 'object' && obj.type === 'TypeReference') {
-          const cname = obj.name;
-          this.static_props[cname][tgt.property.name] = compute(this.static_props[cname][tgt.property.name], val);
-  
-          return;
-        }
-        if (typeof obj === 'string') throw new Error("ImmutableAssignmentError: 문자열의 일부를 직접 바꿀 수 없어요.");
-        if (obj instanceof HajaObject) {
-          const propName = tgt.property.name;
-          const expr = null; const stmt = null;
-
-        const find_property_decl = (cname: string): any => {
-          const cast = this.classes[cname];
-          if (!cast) return null;
-          for (const s of cast.body) {
-            if (s.type === 'VariableDeclaration' && s.target.name === propName) return s;
-          }
-          if (cast.baseClass) return find_property_decl(cast.baseClass.name || cast.baseClass);
-          return null;
-        };
-        const decl = find_property_decl(obj.cls_name);
-        if (decl && decl.accessModifier !== 'public' && !(expr && expr.is_fake) && !(stmt && stmt.is_fake)) {
-           if (decl.accessModifier === 'private') {
-             if (env.get('this') !== obj) throw new Error(`AccessViolationError: '${propName}' 속성은 내부 전용(private)이라 외부에서 부를 수 없어요.`);
-           } else if (decl.accessModifier === 'protected') {
-             if (!env.has('this')) throw new Error(`AccessViolationError: '${propName}' 속성은 상속된 클래스 전용(protected)이라 외부에서 부를 수 없어요.`);
-           }
-        }
-
-          const find_setter = (cname: string): any => {
-            const cast = this.classes[cname];
-            if (!cast) return null;
-            for (const s of cast.body) {
-              if (s.type === 'VariableDeclaration' && s.target.name === propName && s.setter) return s.setter;
-            }
-            if (cast.baseClass) return find_setter(cast.baseClass.name || cast.baseClass);
-            return null;
-          };
-          const setter = find_setter(obj.cls_name);
-          const find_getter = (cname: string): ASTNode[] | null => {
-            const cast = this.classes[cname];
-            if (!cast) return null;
-            for (const s of cast.body) {
-              if (s.type === 'VariableDeclaration' && s.target.name === propName && s.getter) return s.getter;
-            }
-            if (cast.baseClass) return find_getter(cast.baseClass.name || cast.baseClass);
-            return null;
-          };
-          const getter = find_getter(obj.cls_name);
-          let current_val = obj.props[propName];
-          if (getter) {
-            const getter_env = new Environment(env);
-            getter_env.declare('this', obj, false);
-            try {
-              for (const s of getter) await this.execute(s, getter_env);
-            } catch (e: any) {
-              if (e.name === 'ReturnValue') current_val = e.value;
-              else throw e;
-            }
-          }
-          const new_val = compute(current_val, val);
-          if (setter) {
-            const setter_env = new Environment(env);
-            setter_env.declare('this', obj, false);
-            setter_env.declare(setter.param.name, new_val, false);
-            try {
-              for (const s of setter.body) await this.execute(s, setter_env);
-            } catch (e: any) {
-              if (e.name === 'ReturnValue') return;
-              throw e;
-            }
-            return;
-          }
-          obj.props[propName] = new_val;
-        } else if (Array.isArray(obj)) {
-          let idx = -1;
-          if (tgt.property.type === 'IndexLiteral') idx = tgt.property.value - 1;
-          else if (tgt.property.type === 'IndexExpression') idx = await this.evaluate(tgt.property.index, env) - 1;
-          else if (tgt.property.type === 'Literal') idx = await this.evaluate(tgt.property, env);
-          
-          if (idx !== -1) obj[idx] = compute(obj[idx], val);
-        } else if (obj !== null && typeof obj === 'object') {
-          if (tgt.property.type === 'Literal') obj[await this.evaluate(tgt.property, env)] = compute(obj[await this.evaluate(tgt.property, env)], val);
-          else if (tgt.property.type === 'Identifier') obj[tgt.property.name] = compute(obj[tgt.property.name], val);
-        }
-      }
-    } else if (t === 'ListAppend' || t === 'ListPushStatement') {
-      const tgt = stmt.target;
-      const val = stmt.value ? await this.evaluate(stmt.value, env) : null;
-      let obj;
-      if (tgt.type === 'Identifier') {
-        obj = env.get(tgt.name);
-      } else if (tgt.type === 'MemberExpression') {
-        if (tgt.object.type === 'OuterReference') {
-          obj = env.getOuter(tgt.property.name);
-        } else {
-          const parent = await this.evaluate(tgt.object, env);
-          if (parent instanceof HajaObject) {
-            obj = parent.props[tgt.property.name];
-          } else if (parent !== null && typeof parent === 'object') {
-            const key = tgt.property.type === 'Literal' ? await this.evaluate(tgt.property, env) : tgt.property.name;
-            obj = parent[key];
-          }
-        }
-      }
-      
-      if (!Array.isArray(obj)) throw new Error("TypeError: 목록이 아니에요.");
-      if (stmt.position === 'front') obj.unshift(val);
-      else obj.push(val);
-    } else if (t === 'ListPopStatement') {
-      const tgt = stmt.target;
-      let obj;
-      if (tgt.type === 'Identifier') obj = env.get(tgt.name);
-      else if (tgt.type === 'MemberExpression') {
-         if (tgt.object.type === 'OuterReference') obj = env.getOuter(tgt.property.name);
-         else {
-           const parent = await this.evaluate(tgt.object, env);
-           if (parent instanceof HajaObject) obj = parent.props[tgt.property.name];
-           else if (parent !== null && typeof parent === 'object') {
-             const key = tgt.property.type === 'Literal' ? await this.evaluate(tgt.property, env) : tgt.property.name;
-             obj = parent[key];
-           }
-         }
-      }
-      if (!Array.isArray(obj)) throw new Error("TypeError: 목록이 아니에요.");
-      if (obj.length === 0) throw new Error("IndexOutOfBoundsError: 빈 목록에서 값을 꺼낼 수 없어요.");
-      if (stmt.position === 'front') obj.shift();
-      else obj.pop();
-    } else if (t === 'ImportStatement') {
-      // For web playground, we just ignore imports or throw unsupported
-      throw new Error("웹 놀이터에서는 외부 파일(모듈) 가져오기를 아직 지원하지 않아요.");
-    } else if (t === 'IfStatement') {
-      const cond = await this.evaluate(stmt.condition, env);
-      let executed = false;
-      if (cond) {
-        for (const bs of stmt.consequent) await this.execute(bs, env);
-        executed = true;
-      } else if (stmt.elifs && stmt.elifs.length > 0) {
-        for (const elif of stmt.elifs) {
-          if (await this.evaluate(elif.condition, env)) {
-            for (const bs of elif.consequent) await this.execute(bs, env);
-            executed = true;
-            break;
-          }
-        }
-      }
-      
-      if (!executed && stmt.alternate) {
-        for (const bs of stmt.alternate) await this.execute(bs, env);
-      }
-    } else if (t === 'TryStatement') {
-      try {
-        for (const s of stmt.block) await this.execute(s, env);
-      } catch (e: any) {
-        if (e.name === 'ReturnValue') throw e;
-        let msg = e.message || String(e);
-        msg = msg.replace(/^\[\d+번째 줄\]\s*/, '');
-        
-        let handled = false;
-        if (stmt.handlers && stmt.handlers.length > 0) {
-          for (const handler of stmt.handlers) {
-            // Check if catchType matches the error's name, or if there's no catchType
-            if (!handler.catchType || handler.catchType.name === e.name || e.name === 'HajaRuntimeError') {
-              const catch_env = new Environment(env);
-              const err_val = e.hajaObj || msg;
-              catch_env.declare(handler.param.name || handler.param, err_val, false);
-              for (const s of handler.body) await this.execute(s, catch_env);
-              handled = true;
-              break;
-            }
-          }
-        }
-        if (!handled) throw e;
-      } finally {
-        if (stmt.finalizer) {
-          for (const s of stmt.finalizer) await this.execute(s, env);
-        }
-      }
-    } else if (t === 'ForRangeStatement') {
-      const start = parseInt(await this.evaluate(stmt.start, env), 10);
-      const end = parseInt(await this.evaluate(stmt.end, env), 10);
-      for (let i = start; i <= end; i++) {
-        const loop_env = new Environment(env);
-        loop_env.declare(stmt.iterator.name || stmt.iterator, i, false);
-        try {
-          for (const s of stmt.body) await this.execute(s, loop_env);
-        } catch (e: any) {
-          if (e.name === 'BreakLoop') break;
-          throw e;
-        }
-      }
-    } else if (t === 'SwitchStatement') {
-      const disc = await this.evaluate(stmt.discriminant, env);
-      let matched = false;
-      let fallthrough = false;
-      
-      for (const case_ast of stmt.cases) {
-        if (!matched && !fallthrough) {
-          for (const val_ast of case_ast.values) {
-            if (await this.evaluate(val_ast, env) === disc) {
-              matched = true;
-              break;
-            }
-          }
-        }
-        
-        if (matched || fallthrough) {
-          fallthrough = false;
-          for (const s of case_ast.body) {
-            if (s.type === 'FallthroughStatement') {
-              fallthrough = true;
-              break;
-            }
-            const ret = await this.execute(s, env);
-            if (ret !== undefined) return ret;
-          }
-          if (!fallthrough) break;
-        }
-      }
-      
-      if ((!matched || fallthrough) && stmt.default) {
-        for (const s of stmt.default) {
-          const ret = await this.execute(s, env);
-          if (ret !== undefined) return ret;
-        }
-      }
-    } else if (t === 'WhileLoop') {
-      while (await this.evaluate(stmt.condition, env)) {
-        const loop_env = new Environment(env);
-        try {
-          for (const s of stmt.body) await this.execute(s, loop_env);
-        } catch (e: any) {
-          if (e.name === 'BreakLoop') break;
-          throw e;
-        }
-      }
-    } else if (t === 'ForEachLoop') {
-        const iterable = await this.evaluate(stmt.iterable, env);
-        if (!Array.isArray(iterable)) throw new Error("TypeError: 반복할 수 있는 목록이나 사전이 아니에요.");
-      for (const item of iterable) {
-        const loop_env = new Environment(env);
-        loop_env.declare(stmt.item.name, item, false);
-        try {
-          for (const s of stmt.body) await this.execute(s, loop_env);
-        } catch (e: any) {
-          if (e.name === 'BreakLoop') break;
-          throw e;
-        }
-      }
-    } else if (t === 'BreakStatement') {
-      throw new BreakLoop();
-    } else if (t === 'ThrowStatement') {
-      const err_obj = await this.evaluate(stmt.error, env);
-      const msg = err_obj instanceof HajaObject ? (err_obj.props['메시지'] || '알 수 없는 오류') : String(err_obj);
-      throw new HajaRuntimeError(msg, (stmt as any).line || 0, err_obj instanceof HajaObject ? err_obj : undefined);
-    } else if (t === 'ReturnStatement') {
-      const val = stmt.value ? await this.evaluate(stmt.value, env) : null;
-      throw new ReturnValue(val);
-    }
-  }
-
-  async evaluate(expr: ASTNode, env: Environment): Promise<any> {
-    const t = expr.type;
-    
-    if (t === 'Literal') return expr.value; else if (t === 'Identifier') {
-      if (expr.name === '나' && env.has('this')) return env.get('this');
-      if (expr.name === '부모' && env.has('this')) return { type: "SuperReference", object: env.get('this') };
-      const val = env.get(expr.name);
-      if (val === undefined && this.classes[expr.name]) {
-         return { type: "TypeReference", name: expr.name, typeArgs: [] };
-      }
-      return val;
-    } else if (t === 'ListLiteral') {
-      const _els = [];
-      for (const el of (expr.elements || [])) {
-        _els.push(await this.evaluate(el, env));
-      }
-      return _els;
-    } else if (t === 'DictLiteral') {
-      const obj: Record<string, any> = {};
-      for (const prop of expr.elements) {
-        const key = await this.evaluate(prop.key, env);
-        const val = await this.evaluate(prop.value, env);
-        obj[key] = val;
-      }
-      return obj;
-    } else if (t === 'TypeReference') {
-        return { type: "TypeReference", name: expr.name, typeArgs: expr.typeArgs || [] };
-      } else if (t === 'Identifier') {
-      if (expr.name === '나' && env.has('this')) return env.get('this');
-      if (expr.name === '부모' && env.has('this')) return { type: "SuperReference", object: env.get('this') };
-      return env.get(expr.name);
-    } else if (t === 'OuterReference') {
-      return { type: "OuterReference" };
-    } else if (t === 'ListPopExpression') {
-      const tgt = expr.target;
-      let obj;
-      if (tgt.type === 'Identifier') obj = env.get(tgt.name);
-      else if (tgt.type === 'MemberExpression') {
-         if (tgt.object.type === 'OuterReference') obj = env.getOuter(tgt.property.name);
-         else {
-           const parent = await this.evaluate(tgt.object, env);
-           if (parent instanceof HajaObject) obj = parent.props[tgt.property.name];
-           else if (parent !== null && typeof parent === 'object') {
-             const key = tgt.property.type === 'Literal' ? await this.evaluate(tgt.property, env) : tgt.property.name;
-             obj = parent[key];
-           }
-         }
-      }
-      if (!Array.isArray(obj)) throw new Error("TypeError: 목록이 아니에요.");
-      if (obj.length === 0) throw new Error("IndexOutOfBoundsError: 빈 목록에서 값을 꺼낼 수 없어요.");
-      if (expr.position === 'front') return obj.shift();
-      return obj.pop();
-    } else if (t === 'Identifier') {
-      if (expr.name === '나' && env.has('this')) return env.get('this');
-      if (expr.name === '부모' && env.has('this')) return { type: "SuperReference", object: env.get('this') };
-      return env.get(expr.name);
-    } else if (t === 'OuterReference') {
-      return { type: "OuterReference" };
-    } else if (t === 'TypeLiteral') {
-      return expr.name;
-    } else if (t === 'FunctionReference') {
-      return expr.expression ? await this.evaluate(expr.expression, env) : expr.name;
-    } else if (t === 'SuperReference') {
-      if (!env.has('this')) throw new Error("SuperReferenceError: 부모를 찾을 수 없는 곳에서 부모를 불렀어요.");
-      return { type: "SuperReference", object: env.get('this') };
-    } else if (t === 'TemplateLiteral') {
-      let res = "";
-      for (let i = 0; i < expr.strings.length; i++) {
-        res += expr.strings[i];
-        if (i < expr.expressions.length) {
-          res += this.format_value(await this.evaluate(expr.expressions[i], env));
-        }
-      }
-      return res;
-    } else if (t === 'NewExpression') {
-      const cls = expr.class || expr.callee?.name;
-      const cast_ast = this.classes[cls];
-      if (cast_ast && cast_ast.isAbstract) throw new Error(`InstantiationError: 밑설계 클래스 '${cls}'는 직접 만들 수 없어요.`);
-      
-      const obj = new HajaObject(cls);
-      
-      const init_props = async (cname: string) => {
-        const cast = this.classes[cname];
-        if (!cast) return;
-        if (cast.baseClass) await init_props(cast.baseClass.name || cast.baseClass);
-        for (const s of cast.body) {
-          if (s.type === 'VariableDeclaration' || s.type === 'Assignment') {
-            obj.props[s.target.name] = s.value ? await this.evaluate(s.value, env) : null;
-          }
-        }
-      };
-      await init_props(cls);
-      
-      if (cls === '오류' && expr.arguments.length > 0) {
-        obj.props['메시지'] = await this.evaluate(expr.arguments[0], env);
-      }
-      
-      const fake_callee = { type: "BoundMethod", object: obj, func_name: "처음 만들어질 때" };
-      const ctor_env = new Environment(env); // Wait, NewExpression doesn't use this directly.
-      // But CallExpression handles 'BoundMethod' and sets up func_env.
-      await this.evaluate({ type: "CallExpression", callee: fake_callee, arguments: expr.arguments, is_fake: true }, env);
-      return obj;
-    } else if (t === 'MemberExpression') {
-      if (expr.object.type === 'TypeReference') {
-        const cname = expr.object.name;
-        if (expr.property.type === 'FunctionReference') {
-          return { type: "BoundMethod", object: { type: "StaticClass", name: cname }, func_name: expr.property.expression ? await this.evaluate(expr.property.expression, env) : expr.property.name };
-        }
-        const ret = this.static_props[cname]?.[expr.property.name];
-  
-  return ret;
-      }
-      if (expr.object.type === 'OuterReference') {
-        return env.getOuter(expr.property.name);
-      }
-      const obj = await this.evaluate(expr.object, env);
-      
-      if (obj && typeof obj === 'object' && obj.type === 'TypeReference') {
-        const cname = obj.name;
-        if (expr.property.type === 'FunctionReference') {
-          return { type: "BoundMethod", object: { type: "StaticClass", name: cname }, func_name: expr.property.expression ? await this.evaluate(expr.property.expression, env) : expr.property.name };
-        }
-        const ret = this.static_props[cname]?.[expr.property.name];
-  
-  return ret;
-      }
-      if (obj && typeof obj === 'object' && obj.type === 'SuperReference') {
-        return { type: "BoundMethod", object: obj.object, func_name: expr.property.name, is_super: true };
-      }
-      if (obj instanceof HajaObject) {
-        if (expr.property.type === 'FunctionReference') {
-          return { type: "BoundMethod", object: obj, func_name: expr.property.expression ? await this.evaluate(expr.property.expression, env) : expr.property.name };
-        }
-        const propName = expr.property.name;
-        const stmt = null;
-
-        const find_property_decl = (cname: string): any => {
-          const cast = this.classes[cname];
-          if (!cast) return null;
-          for (const s of cast.body) {
-            if (s.type === 'VariableDeclaration' && s.target.name === propName) return s;
-          }
-          if (cast.baseClass) return find_property_decl(cast.baseClass.name || cast.baseClass);
-          return null;
-        };
-        const decl = find_property_decl(obj.cls_name);
-        if (decl && decl.accessModifier !== 'public' && !(expr && expr.is_fake) && !(stmt && stmt.is_fake)) {
-           if (decl.accessModifier === 'private') {
-             if (env.get('this') !== obj) throw new Error(`AccessViolationError: '${propName}' 속성은 내부 전용(private)이라 외부에서 부를 수 없어요.`);
-           } else if (decl.accessModifier === 'protected') {
-             if (!env.has('this')) throw new Error(`AccessViolationError: '${propName}' 속성은 상속된 클래스 전용(protected)이라 외부에서 부를 수 없어요.`);
-           }
-        }
-
-        // Check getter
-        const find_getter = (cname: string): ASTNode[] | null => {
-          const cast = this.classes[cname];
-          if (!cast) return null;
-          for (const s of cast.body) {
-            if (s.type === 'VariableDeclaration' && s.target.name === propName && s.getter) return s.getter;
-          }
-          if (cast.baseClass) return find_getter(cast.baseClass.name || cast.baseClass);
-          return null;
-        };
-        const getter = find_getter(obj.cls_name);
-        if (getter) {
-          const getter_env = new Environment(env);
-          getter_env.declare('this', obj, false);
-          try {
-            for (const s of getter) await this.execute(s, getter_env);
-          } catch (e: any) {
-            if (e.name === 'ReturnValue') return e.value;
-            throw e;
-          }
-          return null;
-        }
-        return obj.props[propName];
-      }
-      if (Array.isArray(obj)) {
-        if (expr.property.type === 'LengthLiteral' || (expr.property.type === 'Identifier' && expr.property.name === '길이')) return obj.length;
-        if (expr.property.type === 'FunctionReference' && expr.property.name === '비우기') return { type: "NativeMethod", object: obj, func_name: '비우기' };
-        
-        let idx = -1;
-        if (expr.property.type === 'IndexLiteral') idx = expr.property.value - 1;
-        else if (expr.property.type === 'IndexExpression') idx = await this.evaluate(expr.property.index, env) - 1;
-        else if (expr.property.type === 'Literal') idx = await this.evaluate(expr.property, env);
-        
-        if (idx !== -1) {
-          if (typeof idx === 'number' && (idx < 0 || idx >= obj.length)) throw new Error("IndexOutOfBoundsError: 목록의 길이를 벗어난 위치(인덱스)예요.");
-          return obj[idx];
-        }
-      }
-      if (typeof obj === 'string') {
-        if (expr.property.type === 'LengthLiteral' || (expr.property.type === 'Identifier' && expr.property.name === '길이')) return Array.from(obj).length;
-        if (expr.property.type === 'FunctionReference') return { type: "NativeMethod", object: obj, func_name: expr.property.expression ? await this.evaluate(expr.property.expression, env) : expr.property.name };
-        
-        let idx = -1;
-        if (expr.property.type === 'IndexLiteral') idx = expr.property.value - 1;
-        else if (expr.property.type === 'IndexExpression') idx = await this.evaluate(expr.property.index, env) - 1;
-        else if (expr.property.type === 'Literal') idx = await this.evaluate(expr.property, env);
-        
-        if (idx !== -1) {
-          const arr = Array.from(obj);
-          if (typeof idx === 'number' && (idx < 0 || idx >= arr.length)) throw new Error("IndexOutOfBoundsError: 문자열의 길이를 벗어난 위치(인덱스)예요.");
-          return arr[idx];
-        }
-      }
-      if (obj !== null && typeof obj === 'object') {
-        if (expr.property.type === 'Literal') {
-          const key = await this.evaluate(expr.property, env);
-          if (!(key in obj)) throw new Error(`KeyError: 사전에서 '${key}' 이름을 찾을 수 없어요.`);
-          return obj[key];
-        }
-        if (expr.property.type === 'Identifier') {
-          const key = expr.property.name;
-          if (!(key in obj)) throw new Error(`KeyError: 사전에서 '${key}' 이름을 찾을 수 없어요.`);
-          return obj[key];
-        }
-      }
-    } else if (t === 'CallExpression') {
-      const callee = expr.is_fake ? expr.callee : await this.evaluate(expr.callee, env);
-      
-      if (callee && typeof callee === 'object' && callee.type === 'NativeMethod') {
-         const obj = callee.object;
-         const fname = callee.func_name;
-         const args = [];
-         for (const a of expr.arguments) args.push(await this.evaluate(a, env));
-         
-         if (Array.isArray(obj)) {
-           if (fname === '비우기') { obj.length = 0; return null; }
-         } else if (typeof obj === 'string') {
-           if (fname === '자르기') {
-             const arr = Array.from(obj);
-             const start = (args[0] || 1) - 1;
-             const end = args[1] || arr.length;
-             return arr.slice(start, end).join('');
-           }
-           if (fname === '바꾸기') return obj.split(args[0]).join(args[1]);
-           if (fname === '포함확인') return obj.includes(args[0]);
-           if (fname === '분리하기') {
-             if (!obj.includes(args[0])) return [obj];
-             return obj.split(args[0]);
-           }
-         }
-         throw new Error(`MethodNotFoundError: 지원하지 않는 내장 기능 '${fname}'입니다.`);
-      }
-      
-      if (callee && typeof callee === 'object' && callee.type === 'BoundMethod') {
-        const obj = callee.object;
-        const fname = callee.func_name;
-        const is_super = callee.is_super || false;
-
-        if (obj && obj.type === 'StaticClass') {
-          const cname = obj.name;
-          const cast = this.classes[cname];
-          let func_decl = null;
-          for (const s of cast.body) {
-             if (s.type === 'FunctionDeclaration' && s.id === fname && s.isStatic) {
-                 func_decl = s; break;
-             }
-          }
-          if (!func_decl) throw new Error(`MethodNotFoundError: ${cname} 클래스에는 정적 메서드 ${fname}이(가) 없어요.`);
-          
-          const func_env = new Environment(env);
-          func_env.declare('우리', { type: "TypeReference", name: cname, typeArgs: [] }, false);
-          
-          const params = func_decl.params || [];
-          if (expr.arguments.length > params.length) throw new Error("ArgumentError: 함수에 전달된 인자의 개수가 너무 많아요.");
-          for (let i = 0; i < params.length; i++) {
-             if (i < expr.arguments.length) {
-                func_env.declare(params[i].name, await this.evaluate(expr.arguments[i], env), false);
-             } else if (params[i].default) {
-                func_env.declare(params[i].name, await this.evaluate(params[i].default, env), false);
-             } else {
-                throw new Error("MissingArgumentError: 함수 실행에 필요한 인자가 누락되었어요.");
-             }
-          }
-          try {
-             for (const s of func_decl.body || []) await this.execute(s, func_env);
-          } catch (e: any) {
-             if (e.name === 'ReturnValue') return e.value;
-             throw e;
-          }
-          return null;
-        }
-
-        
-        const find_and_run = async (cname: string, skip_cur: boolean): Promise<[boolean, any]> => {
-          const cast = this.classes[cname];
-          if (!cast) return [false, null];
-          
-          if (!skip_cur) {
-            for (const s of cast.body) {
-              if ((s.type === 'FunctionDeclaration' && s.id === fname) || (s.type === 'ConstructorDeclaration' && fname === '처음 만들어질 때')) {
-                if (s.accessModifier === 'private' && !expr.is_fake) {
-                  if (env.get('this') !== obj) throw new Error(`AccessViolationError: '${fname}' 기능은 내부 전용(private)이라 외부에서 부를 수 없어요.`);
-                }
-                if (s.accessModifier === 'protected' && !expr.is_fake) {
-                  if (!env.has('this')) throw new Error(`AccessViolationError: '${fname}' 기능은 상속된 클래스 전용(protected)이라 외부에서 부를 수 없어요.`);
-                }
-                
-                const local_env = new Environment(env);
-                local_env.declare('this', obj, false);
-                local_env.declare('우리', { type: "TypeReference", name: obj.cls_name, typeArgs: [] }, false);
-                const params = s.params || [];
-                if (expr.arguments.length > params.length) throw new Error("ArgumentError: 함수에 전달된 인자의 개수가 너무 많아요.");
-                for (let i = 0; i < params.length; i++) {
-                  if (i < expr.arguments.length) {
-                    local_env.declare(params[i].name, await this.evaluate(expr.arguments[i], env), false);
-                  } else if (params[i].default) {
-                    local_env.declare(params[i].name, await this.evaluate(params[i].default, env), false);
-                  } else {
-                    throw new Error("MissingArgumentError: 함수 실행에 필요한 인자가 누락되었어요.");
-                  }
-                }
-                try {
-                  for (const bs of s.body) await this.execute(bs, local_env);
-                } catch (e: any) {
-                  if (e.name === 'ReturnValue') return [true, e.value];
-                  throw e;
-                }
-                return [true, null];
-              }
-            }
-          }
-          
-          if (cast.baseClass) {
-            const [found, val] = await find_and_run(cast.baseClass.name || cast.baseClass, false);
-            if (found) return [true, val];
-          }
-          return [false, null];
-        };
-        
-        const [found, val] = await find_and_run(obj.cls_name, is_super);
-        if (!found && !expr.is_fake) throw new Error(`MethodNotFoundError: 객체에서 '${fname}' 기능을 찾을 수 없어요.`);
-        return val;
-      } else if (typeof callee === 'string') {
-        if (['숫자로', '문자로', '코드로', '글자로'].includes(callee)) {
-           const args = [];
-           for (const a of expr.arguments) args.push(await this.evaluate(a, env));
-           if (callee === '숫자로') {
-             const res = Number(args[0]);
-             if (isNaN(res)) throw new Error("ConversionError: 숫자로 바꿀 수 없는 값이에요.");
-             return res;
-           }
-           if (callee === '문자로') return this.format_value(args[0]);
-           if (callee === '코드로') {
-             if (typeof args[0] !== 'string' || Array.from(args[0]).length !== 1) throw new Error("ConversionError: 한 글자만 바꿀 수 있어요.");
-             return args[0].codePointAt(0);
-           }
-           if (callee === '글자로') {
-             return String.fromCodePoint(args[0]);
-           }
-        }
-        
-        const func_decl = this.functions[callee];
-        if (!func_decl) throw new Error(`ReferenceError: 함수 '${callee}'를 찾을 수 없어요.`);
-        if (func_decl.type === 'BuiltinFunction') {
-          const args = [];
-          for (const a of expr.arguments) {
-            args.push(await this.evaluate(a, env));
-          }
-          return func_decl.execute(args);
-        }
-        
-        const local_env = new Environment(env);
-        const params = func_decl.params || [];
-        if (expr.arguments.length > params.length) throw new Error("ArgumentError: 함수에 전달된 인자의 개수가 너무 많아요.");
-        for (let i = 0; i < params.length; i++) {
-          if (i < expr.arguments.length) {
-            local_env.declare(params[i].name, await this.evaluate(expr.arguments[i], env), false);
-          } else if (params[i].default) {
-            local_env.declare(params[i].name, await this.evaluate(params[i].default, env), false);
-          } else {
-            throw new Error("MissingArgumentError: 함수 실행에 필요한 인자가 누락되었어요.");
-          }
-        }
-        try {
-          for (const bs of func_decl.body) await this.execute(bs, local_env);
-        } catch (e: any) {
-          if (e.name === 'ReturnValue') return e.value;
-          throw e;
-        }
-        return null;
-      }
-    } else if (t === 'BinaryExpression') {
-      const op = expr.operator;
-      // Logical short-circuit
-      if (op === '그리고' || op === '또는') {
-        const l = await this.evaluate(expr.left, env);
-        if (op === '그리고') return l ? await this.evaluate(expr.right, env) : false;
-        if (op === '또는') return l ? true : await this.evaluate(expr.right, env);
-      }
-      
-      const l = await this.evaluate(expr.left, env);
-      const r = await this.evaluate(expr.right, env);
-
-      // Operator overloading
-      if (l instanceof HajaObject) {
-        let op_method = '';
-        if (op === '==') op_method = '기호 같다';
-        if (op === '+') op_method = '기호 더하기';
-        // Check if method exists
-        const find_method = (cname: string): boolean => {
-          const cast = this.classes[cname];
-          if (!cast) return false;
-          if (cast.body.some((s: any) => s.type === 'FunctionDeclaration' && s.id === op_method)) return true;
-          if (cast.baseClass) return find_method(cast.baseClass.name || cast.baseClass);
-          return false;
-        };
-        
-        if (op_method && find_method(l.cls_name)) {
-          const fake_callee = { type: "BoundMethod", object: l, func_name: op_method };
-          const res = await this.evaluate({ type: "CallExpression", callee: fake_callee, arguments: [expr.right], is_fake: true }, env);
-          if (op === '!=') return !res;
-          return res;
-        }
-      }
-
-      if (op === '==') return l === r;
-      if (op === '!=') return l !== r;
-      if (op === '>') return l > r;
-      if (op === '<') return l < r;
-      if (op === '>=') return l >= r;
-      if (op === '<=') return l <= r;
-      if (op === '+') {
-         if (typeof l === 'string' || typeof r === 'string') {
-            if (typeof l !== 'string' || typeof r !== 'string') throw new Error("TypeError: 문자열과 다른 타입을 더할 수 없어요.");
-         }
-         return l + r;
-      }
-      if (op === '*') return l * r;
-      if (op === '-') return l - r;
-
-      if (op === '/' || op === '%') {
-        if (r === 0) {
-          throw new Error("DivideByZeroError: 0으로 나눌 수 없어요.");
-        }
-        return op === '/' ? l / r : l % r;
-      }
-
-      if (op === 'instanceof') {
-          let checkType = null;
-          if (typeof r === 'string') checkType = r;
-          else if (r && r.type === 'TypeReference') checkType = r.name;
-          
-          if (checkType) {
-            const r_str = checkType;
-            if (r_str === '문자열') return typeof l === 'string';
-            if (r_str === '숫자') return typeof l === 'number';
-            if (r_str === '불리언') return typeof l === 'boolean';
-            if (r_str === '목록' || r_str === '배열') return Array.isArray(l);
-            if (r_str === '사전') return l !== null && typeof l === 'object' && !Array.isArray(l) && !(l instanceof HajaObject);
-            if (l instanceof HajaObject) {
-              let clsName: string | null = l.cls_name;
-              while (clsName) {
-                if (clsName === r_str) return true;
-                const c = this.classes[clsName];
-                clsName = c && c.baseClass ? (c.baseClass.name || c.baseClass) : null;
-              }
-              let currentCls: string | null = l.cls_name;
-              while (currentCls) {
-                const c = this.classes[currentCls];
-                if (c && c.interfaces) {
-                  for (const iface of c.interfaces) {
-                    if ((iface.name || iface) === r_str) return true;
-                  }
-                }
-                currentCls = c && c.baseClass ? (c.baseClass.name || c.baseClass) : null;
-              }
-            }
-          }
-                  return false;
-        }
-        return false;
-    } else if (t === 'LogicalExpression') {
-      const l = await this.evaluate(expr.left, env);
-      const op = expr.operator;
-      if (op === '그리고') {
-        if (!l) return false;
-        return await this.evaluate(expr.right, env);
-      } else if (op === '또는') {
-        if (l) return true;
-        return await this.evaluate(expr.right, env);
-      }
-    }
-    return null;
-  }
 }
 
+// newBuiltinErrorClass는 모든 인터프리터 인스턴스에 기본으로 존재하는 [오류] 클래스를
+// 만듭니다. 소스를 파싱하지 않고 AST를 직접 구성하는 이유는 인터프리터 초기화
+// 시점에 파서에 의존하고 싶지 않기 때문입니다 (Go 쪽과 동일한 이유).
+function newBuiltinErrorClass(cfg: LangConfig): ast.ClassDeclaration {
+  const self = (prop: string): ast.MemberExpression => ({
+    type: "MemberExpression",
+    object: { type: "Identifier", value: cfg.selfWords[0] },
+    property: { type: "Identifier", value: prop },
+  });
 
-
-
+  return {
+    type: "ClassDeclaration",
+    name: { type: "TypeReference", name: cfg.builtinErrorClass },
+    baseClass: null,
+    interfaces: [],
+    body: [
+      {
+        type: "VariableDeclaration",
+        name: { type: "Identifier", value: cfg.builtinErrorMessage },
+        typeRef: null,
+        value: { type: "StringLiteral", value: "" },
+        isConstant: false,
+        accessModifier: "public",
+        isStatic: false,
+        getter: null,
+        setter: null,
+      },
+      {
+        type: "ConstructorDeclaration",
+        id: { type: "Identifier", value: "__init__" },
+        params: [{ name: { type: "Identifier", value: cfg.builtinErrorCtorArg }, typeAnnotation: null, default: null }],
+        body: [
+          {
+            type: "Assignment",
+            target: self(cfg.builtinErrorMessage),
+            value: { type: "Identifier", value: cfg.builtinErrorCtorArg },
+          },
+        ],
+      },
+      {
+        type: "FunctionDeclaration",
+        name: { type: "Identifier", value: "__toString__" },
+        params: [],
+        accessModifier: "public",
+        isStatic: false,
+        returnType: null,
+        body: {
+          type: "BlockStatement",
+          statements: [{ type: "ReturnStatement", value: self(cfg.builtinErrorMessage) }],
+        },
+      },
+    ],
+  };
+}

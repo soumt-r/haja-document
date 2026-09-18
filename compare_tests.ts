@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { Lexer } from './src/utils/haja/lexer.ts';
 import { Parser } from './src/utils/haja/parser.ts';
 import { HajaInterpreter as Interpreter } from './src/utils/haja/interpreter.ts';
+import { registerStandardLibrary } from './src/utils/haja/stdlib.ts';
 
 const DOCS_DIR = './src/pages/docs';
 const GO_EXECUTABLE = '..\\hana\\hana.exe';
@@ -23,9 +24,10 @@ async function runTypeScriptEngine(code: string): Promise<string> {
     try {
         const lexer = new Lexer(code);
         const parser = new Parser(lexer.tokens);
-        const ast = parser.parse_program();
+        const ast = parser.parseProgram();
         const interpreter = new Interpreter(ast, async () => "");
-        
+        registerStandardLibrary(interpreter);
+
         interpreter.outputCallback = (msg) => {
             output += msg;
         };

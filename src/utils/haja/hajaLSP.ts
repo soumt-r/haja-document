@@ -125,7 +125,7 @@ export const hajaLinter = linter(view => {
   try {
     const lexer = new Lexer(doc);
     const parser = new Parser(lexer.tokens);
-    parser.parse_program();
+    parser.parseProgram();
   } catch (err: any) {
     const msg = String(err);
     const match = msg.match(/(\d+)번째 줄(?:,\s*(\d+)번째 글자)?/);

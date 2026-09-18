@@ -1,847 +1,974 @@
-import { HajaError, type Token, type ASTNode } from './types';
-import { Lexer } from './lexer';
+// Mirrors hana/parser/haja/parser.go method-for-method (parseStatement's
+// lookahead dispatch, parseGenericSov's SOV verb-collection dispatch,
+// parseExpression -> parseMemberAndCall -> parsePrimary precedence chain).
+// Unlike Go's Parser (which takes an injected LangProfile so parser/kanade
+// can reuse it), this repo hardwires hajaProfile directly — see
+// langProfile.ts's header comment for why.
+import * as ast from "./ast";
+import * as tok from "./token";
+import type { Token } from "./token";
+import { Lexer } from "./lexer";
+import { HajaError } from "./errors";
+import { hajaProfile, literalIn, LoopKind, type Component, type LangProfile } from "./langProfile";
 
 export class Parser {
-  tokens: Token[];
-  pos: number;
+  private tokens: Token[];
+  private pos = 0;
+  private lang: LangProfile = hajaProfile;
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
-    this.pos = 0;
   }
 
-  peek(offset = 0): Token | null {
+  private peek(offset = 0): Token | null {
     return this.pos + offset < this.tokens.length ? this.tokens[this.pos + offset] : null;
   }
 
-  consume(expected_type?: string): Token {
-    const tok = this.peek();
-    if (!tok) {
-      const prev = this.tokens.length > 0 ? this.tokens[this.tokens.length - 1] : { line: 1, col: 0, value: '', type: '' };
-      throw new HajaError("SyntaxError: 코드가 중간에 끊긴 것 같아요.", prev.line, prev.col, 1);
-    }
-    if (expected_type && tok.type !== expected_type) {
-      throw new HajaError(`SyntaxError: [${expected_type}] 형식이 필요한데, 어색한 값 '${tok.value}'(이)가 들어왔어요.`, tok.line, tok.col, Math.max(1, tok.value.length));
-    }
-    this.pos += 1;
-    return tok;
-  }
-  
-  parse_type_reference(raw: string): ASTNode {
-    const inner = raw.slice(1, -1);
-    if (inner.startsWith('(')) {
-      const end = inner.indexOf(')');
-      const argsStr = inner.slice(1, end);
-      const name = inner.slice(end + 1);
-      const typeArgs = argsStr.split(',').map(s => ({ type: "TypeReference", name: s.trim(), typeArgs: [] }));
-      return { type: "TypeReference", name, typeArgs };
-    }
-    return { type: "TypeReference", name: inner, typeArgs: [] };
+  private consume(): Token {
+    const t = this.tokens[this.pos];
+    this.pos++;
+    return t;
   }
 
-  parse_program(): ASTNode {
-    const statements: ASTNode[] = [];
-    while (this.peek()) {
-      const stmt = this.parse_statement();
+  parseProgram(): ast.Program {
+    const statements: ast.Statement[] = [];
+    while (this.peek() !== null && this.peek()!.type !== tok.EOF) {
+      const t = this.peek()!.type;
+      if (t === tok.DEDENT || t === tok.INDENT) {
+        this.consume();
+        continue;
+      }
+      const stmt = this.parseStatement();
       if (stmt) statements.push(stmt);
     }
-    return { type: "Program", body: statements };
+    return { type: "Program", statements };
   }
 
-  parse_block(): ASTNode {
-    this.consume('COLON');
-    if (this.peek()?.type === 'INDENT') {
-      this.consume('INDENT');
-      const statements: ASTNode[] = [];
-      while (this.peek() && this.peek()?.type !== 'DEDENT') {
-        const stmt = this.parse_statement();
+  private parseBlock(): ast.BlockStatement {
+    const statements: ast.Statement[] = [];
+    let t = this.peek();
+    if (t && t.type === tok.COLON) this.consume();
+    t = this.peek();
+    if (t && t.type === tok.INDENT) {
+      this.consume();
+      for (;;) {
+        const cur = this.peek();
+        if (!cur || cur.type === tok.DEDENT || cur.type === tok.EOF) break;
+        const stmt = this.parseStatement();
         if (stmt) statements.push(stmt);
       }
-      if (this.peek()?.type === 'DEDENT') {
-        this.consume('DEDENT');
-      }
-      return { type: "BlockStatement", body: statements };
+      if (this.peek() && this.peek()!.type === tok.DEDENT) this.consume();
     }
-    return { type: "BlockStatement", body: [] };
+    return { type: "BlockStatement", statements };
   }
 
-  _do_parse_statement(): ASTNode | null {
-    const is_mod = this.peek()?.type === 'TYPE' || this.peek()?.type === 'STRING';
-    if (is_mod && this.peek(1)?.value === '에서') {
-      const mod_tok = this.consume();
-      const mod = mod_tok.value.slice(1, -1);
-      const is_builtin = mod_tok.type === 'TYPE';
-      this.consume('PARTICLE');
-      
-      if (this.peek()?.type === 'KW_ALL') {
-        this.consume('KW_ALL');
-        this.consume('KW_IMPORT');
-        return { type: "ImportStatement", module: { kind: is_builtin ? "builtin" : "user", name: mod }, imports: null };
-      }
-      
-      const items = [];
-      while (true) {
-        const item_tok = this.consume();
-        if (!['TYPE', 'FUNCTION', 'VARIABLE'].includes(item_tok.type)) {
-          throw new Error(`SyntaxError: 가져올 항목이 올바르지 않아요: ${item_tok.value}`);
-        }
-        const name = item_tok.value.slice(1, -1);
-        items.push(name);
-        
-        const part = this.consume('PARTICLE');
-        if (part.value === '과' || part.value === '와') continue;
-        if ((part.value === '를' || part.value === '을') && this.peek()?.type === 'KW_IMPORT') {
-          this.consume('KW_IMPORT');
-          break;
-        }
-        throw new Error(`SyntaxError: 예상치 못한 조사가 붙어있어요: ${part.value}`);
-      }
-      return { type: "ImportStatement", module: { kind: is_builtin ? "builtin" : "user", name: mod }, imports: items };
-    }
-
-    const tok = this.peek();
-    if (!tok) return null;
-
-    if (tok.type === 'INDENT' || tok.type === 'DEDENT') {
-      this.consume();
+  private parseStatement(): ast.Statement | null {
+    const t = this.peek();
+    if (!t || t.type === tok.EOF) return null;
+    if (t.type === tok.INDENT || t.type === tok.DEDENT) {
+      if (t.type === tok.INDENT) this.consume();
       return null;
     }
 
-    if (tok.type === 'TYPE') {
-      const saved_pos = this.pos;
-      this.pos += 1;
-      if (this.peek()?.type === 'PARTICLE') this.pos += 1;
-      const next_tok = this.peek();
-      this.pos = saved_pos;
-
-      if (next_tok?.type === 'KW_RETURN_TYPE') return this.parse_function_decl();
-      if (next_tok?.type === 'KW_INTERFACE') return this.parse_interface();
-      if (next_tok?.type === 'LPAREN') return this.parse_generic_sov();
-      if (next_tok?.type === 'KW_CATCH') return this.parse_catch();
-      return this.parse_class();
-    }
-
-    if (tok.type === 'FUNCTION') {
-      const saved_pos = this.pos;
-      this.pos += 1;
-      if (this.peek()?.type === 'PARTICLE') this.pos += 1;
-      const is_decl = this.peek()?.type === 'KW_FUNC' || this.peek()?.type === 'KW_REQUIRE';
-      this.pos = saved_pos;
-      if (is_decl) return this.parse_function_decl();
-      return this.parse_generic_sov();
-    }
-    
-    if (tok.type === 'VARIABLE' && tok.value === "'우리'" && this.peek(1)?.type === 'PARTICLE' && this.peek(1)?.value === '의' && this.peek(2)?.type === 'FUNCTION') {
-      return this.parse_function_decl();
-    }
-    
-    if (tok.type === 'KW_CATCH') return this.parse_catch();
-
-    if (tok.type === 'KW_CONSTRUCT') return this.parse_constructor_decl();
-    if (tok.type === 'KW_IF') return this.parse_if();
-    if (tok.type === 'KW_TRY') return this.parse_try();
-    if (tok.type === 'KW_FINALLY') throw new HajaError("SyntaxError: '마무리는 항상'은 반드시 '일단 해보자' 다음에 와야 해요.", tok.line, tok.col, Math.max(1, tok.value.length));
-    
-    let isForRange = false;
-    for (let i = this.pos; i < this.tokens.length && this.tokens[i].type !== 'COLON' && this.tokens[i].line === tok.line; i++) {
-      if (this.tokens[i].type === 'KW_FROM') {
-        isForRange = true;
-        break;
-      }
-    }
-    if (isForRange) return this.parse_for_range();
-    if (tok.type === 'KW_BREAK') {
-      this.consume();
-      return { type: "BreakStatement" };
-    }
-
-    return this.parse_generic_sov();
-  }
-
-  parse_statement(): ASTNode | null {
-    const tok = this.peek();
-    if (!tok) return null;
-    const line = tok.line;
-    const node = this._do_parse_statement();
-    if (node && typeof node === 'object') {
-      node.line = line;
-    }
-    return node;
-  }
-
-  parse_interface(): ASTNode {
-    const nameNode = this.parse_type_reference(this.consume('TYPE').value);
-    if (this.peek()?.type === 'PARTICLE') this.consume();
-    this.consume('KW_INTERFACE');
-    const block = this.parse_block();
-    return { type: "InterfaceDeclaration", id: nameNode.name, body: block.body };
-  }
-
-  parse_class(): ASTNode {
-    let nameNode = null;
-    let baseClass = null;
-    const interfaces: any[] = [];
-    
-    while (this.peek() && this.peek()?.type !== 'KW_CLASS' && this.peek()?.type !== 'COLON') {
-      if (this.peek()?.type === 'TYPE') {
-        const typeNode = this.parse_type_reference(this.consume('TYPE').value);
-        if (this.peek()?.type === 'PARTICLE') this.consume();
-        
-        if (this.peek()?.type === 'KW_BASE') {
-          this.consume('KW_BASE');
-          baseClass = typeNode;
-        } else if (this.peek()?.type === 'KW_IMPLEMENTS') {
-          this.consume('KW_IMPLEMENTS');
-          interfaces.push(typeNode);
-        } else {
-          nameNode = typeNode;
+    if (t.type === tok.LBRACKET || t.type === tok.TYPE) {
+      const savedPos = this.pos;
+      let foundType = false;
+      let isClass = false;
+      let isIface = false;
+      for (let i = this.pos; i < this.tokens.length; i++) {
+        if (this.tokens[i].line !== t.line) break;
+        if (this.tokens[i].type === tok.COLON || this.tokens[i].type === tok.KW_FROM || this.tokens[i].type === tok.KW_IMPORT) break;
+        if (this.tokens[i].type === tok.KW_CLASS || this.tokens[i].type === tok.KW_IMPLEMENTS) {
+          foundType = true;
+          isClass = true;
+          break;
         }
-      } else {
-        this.consume();
-      }
-    }
-    
-    let isAbstract = false;
-    if (this.peek()?.type === 'KW_CLASS') {
-      const kw = this.consume('KW_CLASS');
-      if (kw.value.includes('밑설계하자')) isAbstract = true;
-    }
-    
-    const block = this.parse_block();
-    return { 
-      type: "ClassDeclaration", 
-      id: nameNode ? nameNode.name : "알수없음", 
-      typeParams: nameNode ? nameNode.typeArgs.map((x:any)=>x.name) : [],
-      baseClass, 
-      interfaces, 
-      isAbstract,
-      body: block.body 
-    };
-  }
-
-  parse_function_decl(): ASTNode {
-    let return_type = null;
-    if (this.peek()?.type === 'TYPE') {
-      return_type = this.parse_type_reference(this.consume('TYPE').value);
-      if (this.peek()?.type === 'PARTICLE') this.consume();
-      this.consume('KW_RETURN_TYPE');
-    }
-    
-    let isStatic = false;
-    if (this.peek()?.type === 'VARIABLE' && this.peek()?.value === "'우리'" && this.peek(1)?.type === 'PARTICLE' && this.peek(1)?.value === '의') {
-      this.consume('VARIABLE');
-      this.consume('PARTICLE');
-      isStatic = true;
-    }
-    
-    const name = this.consume('FUNCTION').value.slice(1, -1);
-    if (this.peek()?.type === 'PARTICLE') this.consume();
-
-    if (this.peek()?.type === 'TYPE' && this.peek(1)?.value === '모듈을' && this.peek(2)?.type === 'KW_IMPORT') {
-      const mod = this.consume().value.slice(1, -1);
-      this.consume('VARIABLE');
-      this.consume('KW_IMPORT');
-      return { type: "ImportStatement", module: { kind: "builtin", name: mod }, imports: null };
-    }
-
-    let action = null;
-    if (this.peek()?.type === 'KW_FUNC') action = this.consume('KW_FUNC');
-    else if (this.peek()?.type === 'KW_REQUIRE') action = this.consume('KW_REQUIRE');
-
-    this.consume('LPAREN');
-    const params = [];
-    while (this.peek() && this.peek()?.type !== 'RPAREN') {
-      let paramType = null;
-      if (this.peek()?.type === 'TYPE') {
-        paramType = this.parse_type_reference(this.consume('TYPE').value);
-        if (this.peek()?.type === 'TYPE_IN') this.consume('TYPE_IN');
-      }
-      
-      const paramName = this.consume('VARIABLE').value.slice(1, -1);
-      let defaultVal = null;
-      
-      if (this.peek()?.type === 'ASSIGN_OP') {
-        this.consume('ASSIGN_OP');
-        defaultVal = this.parse_expression();
-      }
-      
-      params.push({ type: paramType, name: paramName, default: defaultVal });
-      
-      if (this.peek()?.type === 'COMMA') this.consume('COMMA');
-    }
-    this.consume('RPAREN');
-
-    if (action?.type === 'KW_REQUIRE') {
-      return { type: "InterfaceMethod", id: name, returnType: return_type, params };
-    }
-    
-    let isAbstract = false;
-    let blockBody = null;
-    if (this.peek()?.type === 'COLON') {
-      const block = this.parse_block();
-      blockBody = block.body;
-    } else {
-      isAbstract = true; // No body
-    }
-
-    const acc = action?.value.includes("숨기자") ? "private" : action?.value.includes("물려주자") ? "protected" : "public";
-    return { type: "FunctionDeclaration", id: name, returnType: return_type, accessModifier: acc, params, body: blockBody, isStatic, isAbstract };
-  }
-
-  parse_constructor_decl(): ASTNode {
-    this.consume('KW_CONSTRUCT');
-    this.consume('LPAREN');
-    const params: any[] = [];
-    while (this.peek() && this.peek()?.type !== 'RPAREN') {
-      let paramType = null;
-      if (this.peek()?.type === 'TYPE') {
-        paramType = this.parse_type_reference(this.consume('TYPE').value);
-        if (this.peek()?.type === 'TYPE_IN') this.consume('TYPE_IN');
-      }
-      
-      if (this.peek()?.type === 'VARIABLE') {
-        const paramName = this.consume('VARIABLE').value.slice(1, -1);
-        params.push({ type: paramType, name: paramName, default: null });
-      }
-      if (this.peek()?.type === 'COMMA') this.consume('COMMA');
-    }
-    this.consume('RPAREN');
-    if (this.peek()?.type === 'KW_DO_AS') this.consume('KW_DO_AS');
-    const block = this.parse_block();
-    return { type: "ConstructorDeclaration", id: { type: "Identifier", name: "처음 만들어질 때" }, params, body: block.body };
-  }
-
-  parse_condition(): ASTNode {
-    if (this.peek()?.type === 'LPAREN') {
-      this.consume('LPAREN');
-      const components = [];
-      while (this.peek() && this.peek()?.type !== 'COMPARE' && this.peek()?.type !== 'RPAREN') {
-        components.push(this.parse_expression());
-        if (this.peek()?.type === 'PARTICLE') this.consume();
-      }
-      let cond_ast = components[0];
-      if (this.peek()?.type === 'COMPARE') {
-        let op = this.consume().value;
-        if (op.includes('일종이다')) op = 'instanceof';
-        else if (op.includes('같다') && op.includes('!')) op = '!=';
-        else if (op.includes('같다')) op = '==';
-        else if (op.includes('크다')) op = '>';
-        else if (op.includes('작다')) op = '<';
-        else if (op.includes('이상이다')) op = '>=';
-        else if (op.includes('이하이다')) op = '<=';
-        else if (op.includes('다르다')) op = '!=';
-        else if (op === '<' || op === '>' || op === '<=' || op === '>=' || op === '==' || op === '!=') {}
-        
-        const left = components[0];
-        const right = components.length > 1 ? components[1] : null;
-        cond_ast = { type: "BinaryExpression", operator: op, left, right };
-      }
-      this.consume('RPAREN');
-      if (this.peek()?.type === 'LOGIC') {
-        const logic = this.consume().value;
-        const right_cond = this.parse_condition();
-        return { type: "LogicalExpression", operator: logic, left: cond_ast, right: right_cond };
-      }
-      return cond_ast;
-    }
-    
-    const expr = this.parse_expression();
-    if (this.peek()?.type === 'LOGIC') {
-        const logic = this.consume().value;
-        const right_cond = this.parse_condition();
-        return { type: "LogicalExpression", operator: logic, left: expr, right: right_cond };
-    }
-    return expr;
-  }
-
-  parse_if(): ASTNode {
-    this.consume('KW_IF');
-    const cond_ast = this.parse_condition();
-    while (this.peek() && this.peek()?.type !== 'COLON') this.consume();
-    const block = this.parse_block();
-    const node: ASTNode = { type: "IfStatement", condition: cond_ast, consequent: block.body, elifs: [], alternate: null };
-    
-    while (this.peek()?.type === 'KW_ELIF') {
-      this.consume('KW_ELIF');
-      const elif_cond = this.parse_condition();
-      while (this.peek() && this.peek()?.type !== 'COLON') this.consume();
-      const elif_block = this.parse_block();
-      node.elifs.push({ condition: elif_cond, consequent: elif_block.body });
-    }
-
-    if (this.peek()?.type === 'KW_ELSE') {
-      this.consume('KW_ELSE');
-      while (this.peek() && this.peek()?.type !== 'COLON') this.consume();
-      const alt_block = this.parse_block();
-      node.alternate = alt_block.body;
-    }
-    return node;
-  }
-
-  parse_try(): ASTNode {
-    this.consume('KW_TRY');
-    const block = this.parse_block();
-    const node: ASTNode = { type: "TryStatement", block: block.body, handlers: [], finalizer: null };
-    
-    while (this.peek()?.type === 'TYPE' || this.peek()?.type === 'KW_CATCH') {
-      node.handlers.push(this.parse_catch());
-    }
-    
-    if (this.peek()?.type === 'KW_FINALLY') {
-      this.consume('KW_FINALLY');
-      const fin_block = this.parse_block();
-      node.finalizer = fin_block.body;
-    }
-    return node;
-  }
-
-  parse_catch(): ASTNode {
-    let catchType = null;
-    if (this.peek()?.type === 'TYPE') {
-      catchType = this.parse_type_reference(this.consume('TYPE').value);
-      if (this.peek()?.type === 'PARTICLE') this.consume();
-    }
-    this.consume('KW_CATCH');
-    let param = { type: "Identifier", name: "e" };
-    if (this.peek()?.type === 'LPAREN') {
-      this.consume('LPAREN');
-      param = { type: "Identifier", name: this.consume('VARIABLE').value.slice(1, -1) };
-      this.consume('RPAREN');
-    }
-    const block = this.parse_block();
-    return { type: "CatchClause", catchType, param, body: block.body };
-  }
-
-  parse_for_range(): ASTNode {
-    const start = this.parse_expression();
-    this.consume('KW_FROM');
-    const end = this.parse_expression();
-    this.consume('KW_TO');
-    
-    let variable = { type: "Identifier", name: "횟수" };
-    if (this.peek()?.type === 'LPAREN') {
-      this.consume('LPAREN');
-      variable = { type: "Identifier", name: this.consume('VARIABLE').value.slice(1, -1) };
-      this.consume('RPAREN');
-    }
-    const block = this.parse_block();
-    return { type: "ForRangeStatement", start, end, iterator: variable, body: block.body };
-  }
-
-  parse_primary(): ASTNode {
-    const tok = this.peek();
-    if (!tok) return { type: "Literal", value: null, raw: "" };
-
-    if (['NUMBER', 'STRING'].includes(tok.type)) {
-      const v = this.consume();
-      return { type: "Literal", value: tok.type === 'NUMBER' ? Number(v.value) : v.value.slice(1, -1), raw: v.value };
-    } else if (tok.type === 'BOOLEAN') {
-      const v = this.consume();
-      return { type: "Literal", value: v.value === '참', raw: v.value };
-    } else if (tok.type === 'NULL') {
-      const v = this.consume();
-      return { type: "Literal", value: null, raw: v.value };
-    } else if (tok.type === 'OP' && tok.value === '-') {
-        this.consume('OP');
-        if (this.peek()?.type === 'NUMBER') {
-          const v = this.consume('NUMBER');
-          return { type: "Literal", value: -Number(v.value), raw: '-' + v.value };
-        }
-        // If not a number, just return Literal(null) for now as fallback
-        return { type: "Literal", value: null, raw: '-' };
-      } else if (tok.type === 'FORMAT_STR') {
-      const v = this.consume();
-      const val = v.value.slice(2, -1);
-      const parts = val.split(/(\{[^}]+\})/);
-      const quasis: string[] = [];
-      const expressions: ASTNode[] = [];
-      for (const p of parts) {
-        if (p.startsWith('{') && p.endsWith('}')) {
-          const inner_code = p.slice(1, -1);
-          const inner_lexer = new Lexer(inner_code);
-          const inner_parser = new Parser(inner_lexer.tokens);
-          expressions.push(inner_parser.parse_expression());
-        } else {
-          const unescaped = p.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-          quasis.push(unescaped);
+        if (this.tokens[i].type === tok.KW_INTERFACE) {
+          foundType = true;
+          isIface = true;
+          break;
         }
       }
-      return { type: "TemplateLiteral", strings: quasis, expressions };
-    } else if (tok.type === 'VARIABLE') {
-      return { type: "Identifier", name: this.consume().value.slice(1, -1) };
-    } else if (tok.type === 'FUNCTION') {
-      const v = this.consume().value.slice(1, -1);
-      if (v.startsWith("'") && v.endsWith("'")) {
-        return { type: "FunctionReference", name: null, expression: { type: "Identifier", name: v.slice(1, -1) } };
-      } else if (v.startsWith('"') && v.endsWith('"')) {
-        return { type: "FunctionReference", name: null, expression: { type: "Literal", value: v.slice(1, -1), raw: v } };
-      }
-      return { type: "FunctionReference", name: v, expression: null };
-    } else if (tok.type === 'KW_PARENT') {
-      this.consume('KW_PARENT');
-      return { type: "SuperReference" };
-    } else if (tok.type === 'KW_OUTER') {
-      this.consume('KW_OUTER');
-      return { type: "OuterReference" };
-    } else if (tok.type === 'KW_CONSTRUCT') {
-      this.consume('KW_CONSTRUCT');
-      return { type: "FunctionReference", name: "처음 만들어질 때", expression: null };
-    } else if (tok.type === 'EMPTY_LIST') {
-      this.consume();
-      return { type: "ListLiteral", elements: [] };
-    } else if (tok.type === 'LBRACKET') {
-      this.consume('LBRACKET');
-      const elements = [];
-      while (this.peek() && this.peek()?.type !== 'RBRACKET') {
-        elements.push(this.parse_expression());
-        if (this.peek()?.type === 'COMMA') this.consume('COMMA');
-      }
-      this.consume('RBRACKET');
-      return { type: "ListLiteral", elements };
-    } else if (tok.type === 'EMPTY_DICT') {
-      this.consume();
-      return { type: "DictLiteral", elements: [] };
-    } else if (tok.type === 'LBRACE') {
-      this.consume('LBRACE');
-      const elements = [];
-      while (this.peek() && this.peek()?.type !== 'RBRACE') {
-        const key = this.parse_expression();
-        this.consume('COLON');
-        const value = this.parse_expression();
-        elements.push({ key, value });
-        if (this.peek()?.type === 'COMMA') this.consume('COMMA');
-      }
-      this.consume('RBRACE');
-      return { type: "DictLiteral", elements };
-    } else if (tok.type === 'LPAREN') {
-      const cond = this.parse_condition();
-      return cond;
-    } else if (tok.type === 'KW_NEW') {
-      this.consume('KW_NEW');
-      const t = this.consume('TYPE');
-      if (this.peek()?.type === 'LPAREN') {
-        this.consume('LPAREN');
-        const args = this.parse_arguments();
-        this.consume('RPAREN');
-        return { type: "NewExpression", callee: this.parse_type_reference(t.value), arguments: args };
-      } else {
-        throw new Error(`SyntaxError: '새로운' 키워드 뒤에는 '[클래스이름](...)' 형태가 필요해요.`);
-      }
-    } else if (tok.type === 'TYPE') {
-      const t = this.consume();
-      if (this.peek()?.type === 'LPAREN') {
-        this.consume('LPAREN');
-        const args = this.parse_arguments();
-        this.consume('RPAREN');
-        return { type: "NewExpression", callee: this.parse_type_reference(t.value), arguments: args };
-      }
-      return this.parse_type_reference(t.value);
-    } else if (tok.type === 'KW_LENGTH') {
-      return { type: "LengthLiteral", value: this.consume().value };
-    } else if (tok.type === 'KW_POP' && this.peek(1)?.type === 'KW_VALUE') {
-      // ListPopExpression handling could be tricky here because it's part of an expression
-      // We parse generic components in generic_sov, but if it appears in primary...
-      // Usually it's handled in statement level or member expr.
-    }
-    const val = this.consume();
-    return { type: "Literal", value: null, raw: val.value };
-  }
-
-  parse_arguments(): ASTNode[] {
-    const args = [];
-    while (this.peek() && this.peek()?.type !== 'RPAREN') {
-      args.push(this.parse_expression());
-      if (this.peek()?.type === 'COMMA') this.consume('COMMA');
-    }
-    return args;
-  }
-
-  parse_expression(): ASTNode {
-    // Check for ListPopExpression (e.g. `'목록' (앞에서/뒤에서/에서) 꺼낸 값`)
-    const savedPos = this.pos;
-    if (this.peek()?.type === 'VARIABLE' || this.peek()?.type === 'KW_PARENT' || this.peek()?.type === 'KW_SELF') {
-      let target = this.parse_primary();
-      let isListPop = false;
-      let pos = "back";
-      
-      while (this.peek()?.type === 'PARTICLE' && this.peek()?.value === '의') {
-          this.consume('PARTICLE');
-          target = { type: "MemberExpression", object: target, property: this.parse_primary() };
-      }
-      
-      let hasParticle = false;
-      if (this.peek()?.type === 'PARTICLE' && this.peek()?.value.includes('에서')) {
-        hasParticle = true;
-        this.consume('PARTICLE');
-      }
-      
-      if (this.peek()?.type === 'KW_FRONT') {
-        this.consume('KW_FRONT');
-        if (this.peek()?.type === 'PARTICLE') this.consume('PARTICLE');
-        pos = "front";
-      } else if (this.peek()?.type === 'KW_BACK') {
-        this.consume('KW_BACK');
-        if (this.peek()?.type === 'PARTICLE') this.consume('PARTICLE');
-        pos = "back";
-      }
-      
-      if (this.peek()?.type === 'KW_POP') {
-        this.consume('KW_POP');
-        if (this.peek()?.type === 'TYPE_IN' && this.peek()?.value === 'ㄴ') {
-            this.consume(); // Handle '꺼낸'
-        }
-        if (this.peek()?.type === 'KW_VALUE') {
-            this.consume('KW_VALUE');
-            return { type: "ListPopExpression", target, position: pos };
-        }
+      if (foundType) {
+        if (isClass) return this.parseClass();
+        if (isIface) return this.parseInterface();
       }
       this.pos = savedPos;
     }
-    
-    let expr = this.parse_primary();
-    
-    while (this.peek()) {
-      if (this.peek()?.type === 'KW_INDEX') {
-        this.consume('KW_INDEX');
-        expr = { type: "IndexExpression", index: expr };
-      } else if (this.peek()?.type === 'PARTICLE' && this.peek()?.value === '의') {
-        this.consume('PARTICLE');
-        let prop = this.parse_primary();
-        if (this.peek()?.type === 'KW_INDEX') {
-          this.consume('KW_INDEX');
-          prop = { type: "IndexExpression", index: prop };
+
+    let isFuncDecl = false;
+    const startLine = t.line;
+    for (let i = this.pos; i < this.tokens.length; i++) {
+      const ti = this.tokens[i];
+      if (ti.line !== startLine) break;
+      if (ti.type === tok.COLON || ti.type === tok.DEDENT || ti.type === tok.INDENT) break;
+      if (ti.type === tok.FUNCTION) {
+        if (i + 1 < this.tokens.length) {
+          let nextIdx = i + 1;
+          if (this.tokens[nextIdx].type === tok.PARTICLE) nextIdx++;
+          if (nextIdx < this.tokens.length && (this.tokens[nextIdx].type === tok.KW_MAKE || this.tokens[nextIdx].type === tok.KW_MUST_HAVE)) {
+            isFuncDecl = true;
+            break;
+          }
         }
-        expr = { type: "MemberExpression", object: expr, property: prop };
-      } else if (this.peek()?.type === 'LPAREN') {
-        this.consume('LPAREN');
-        const args = this.parse_arguments();
-        this.consume('RPAREN');
-        expr = { type: "CallExpression", callee: expr, arguments: args };
-      } else if (this.peek()?.type === 'OP') {
-        const op = this.consume().value;
-        const right = this.parse_expression();
-        expr = { type: "BinaryExpression", operator: op, left: expr, right: right };
-      } else if (this.peek()?.type === 'COMPARE' && ['<', '>', '<=', '>=', '==', '!='].includes(this.peek()!.value)) {
-        const op = this.consume().value;
-        const right = this.parse_expression();
-        expr = { type: "BinaryExpression", operator: op, left: expr, right: right };
-        } else if (this.peek()?.type === 'LOGIC') {
-          const op = this.consume().value;
-          const right = this.parse_expression();
-          expr = { type: "LogicalExpression", operator: op, left: expr, right: right };
-        } else {
+      }
+    }
+    if (isFuncDecl) return this.parseFunctionDecl();
+
+    if (t.type === tok.KW_IF) return this.parseIf();
+    if (t.type === tok.KW_CONSTRUCT) return this.parseConstructor();
+    if (t.type === tok.KW_BREAK) {
+      this.consume();
+      return { type: "BreakStatement" };
+    }
+    if (t.type === tok.KW_RETURN) {
+      this.consume();
+      return { type: "ReturnStatement", value: null };
+    }
+    if (t.type === tok.KW_TRY) return this.parseTry();
+
+    // Property declaration with getter/setter?
+    let hasSetter = false;
+    for (let i = 0; this.peek(i) !== null && this.peek(i)!.line === t.line && this.peek(i)!.type !== tok.EOF; i++) {
+      if (this.peek(i)!.type === tok.COLON) {
+        if (i > 0 && this.peek(i - 1)!.type === tok.KW_MAKE) {
+          hasSetter = true;
           break;
         }
+      }
+    }
+    if (hasSetter) return this.parsePropertyDeclaration();
+
+    return this.parseGenericSov();
+  }
+
+  private parsePropertyDeclaration(): ast.VariableDeclaration {
+    const expr = this.parsePrimary();
+    const name = expr.type === "Identifier" ? expr : ({ type: "Identifier", value: "" } as ast.Identifier);
+
+    if (this.peek() && this.peek()!.type === tok.PARTICLE) this.consume();
+
+    const typeRef = this.parseTypeRef();
+
+    if (this.peek() && this.peek()!.type === tok.PARTICLE) this.consume();
+
+    this.consume(); // 정할 때
+    this.consume(); // :
+
+    if (this.peek() && this.peek()!.type === tok.INDENT) this.consume();
+
+    let getter: ast.Statement[] | null = null;
+    let setter: ast.SetterInfo | null = null;
+
+    while (this.peek() !== null && this.peek()!.type !== tok.DEDENT && this.peek()!.type !== tok.EOF) {
+      const cur = this.peek()!;
+      if (cur.type === tok.KW_GETTER) {
+        this.consume(); // 가져올 때
+        this.consume(); // :
+        getter = this.parseBlock().statements;
+      } else if (cur.type === tok.KW_SETTER) {
+        this.consume(); // 정할 때
+        let param: ast.Identifier | null = null;
+        if (this.peek() && this.peek()!.type === tok.LPAREN) {
+          this.consume(); // (
+          const p = this.parsePrimary();
+          if (p.type === "Identifier") param = p;
+          this.consume(); // )
+        }
+        this.consume(); // :
+        setter = { param, body: this.parseBlock().statements };
+      } else {
+        this.consume();
+      }
+    }
+
+    if (this.peek() && this.peek()!.type === tok.DEDENT) this.consume();
+
+    return {
+      type: "VariableDeclaration",
+      name,
+      typeRef,
+      value: null,
+      isConstant: false,
+      accessModifier: "public",
+      isStatic: false,
+      getter,
+      setter,
+    };
+  }
+
+  private parseTry(): ast.TryStatement {
+    this.consume(); // 일단 해보자
+    while (this.peek() !== null && this.peek()!.type !== tok.COLON) this.consume();
+    const block = this.parseBlock();
+
+    const handlers: ast.CatchClause[] = [];
+
+    for (;;) {
+      if (this.peek() === null) break;
+      const startPos = this.pos;
+
+      let errType: ast.TypeReference | null = null;
+      if (this.peek()!.type === tok.TYPE) {
+        errType = this.parseTypeRef();
+      } else if (this.peek()!.type === tok.IDENT && literalIn(this.peek()!.literal, this.lang.errorLiterals)) {
+        this.consume();
+      } else if (this.peek()!.type !== tok.KW_CATCH) {
+        break;
+      }
+
+      if (this.peek() && this.peek()!.type === tok.PARTICLE) this.consume();
+
+      if (this.peek() === null || this.peek()!.type !== tok.KW_CATCH) {
+        this.pos = startPos;
+        break;
+      }
+
+      this.consume(); // 발생했다면
+      let paramName = "";
+      if (this.peek() && this.peek()!.type === tok.LPAREN) {
+        this.consume(); // (
+        if (this.peek() && (this.peek()!.type === tok.VAR || this.peek()!.type === tok.IDENT)) {
+          const nameTok = this.consume();
+          paramName = nameTok.literal;
+          if (nameTok.type === tok.VAR) {
+            paramName = paramName.slice(this.lang.delimLen, paramName.length - this.lang.delimLen);
+          }
+        }
+        if (this.peek() && this.peek()!.type === tok.RPAREN) this.consume(); // )
+      } else {
+        paramName = "에러";
+      }
+      while (this.peek() !== null && this.peek()!.type !== tok.COLON) this.consume();
+      const catchBlock = this.parseBlock();
+      handlers.push({
+        type: "CatchClause",
+        errorType: errType,
+        param: { type: "Identifier", value: paramName },
+        body: catchBlock,
+      });
+    }
+
+    let finalizer: ast.BlockStatement | null = null;
+    if (this.peek() && this.peek()!.type === tok.KW_FINALLY) {
+      this.consume(); // 마무리는 항상
+      while (this.peek() !== null && this.peek()!.type !== tok.COLON) this.consume();
+      finalizer = this.parseBlock();
+    }
+
+    return { type: "TryStatement", block, handlers, finalizer };
+  }
+
+  private parseTypeRef(): ast.TypeReference | null {
+    if (this.peek()!.type === tok.TYPE) {
+      const t = this.consume();
+      let val = t.literal;
+      if (val.startsWith(this.lang.typeOpen) && val.endsWith(this.lang.typeClose)) {
+        val = val.slice(this.lang.delimLen, val.length - this.lang.delimLen);
+      }
+      return { type: "TypeReference", name: val };
+    }
+    if (this.peek()!.type === tok.LBRACKET) {
+      this.consume(); // [
+      const name = this.consume().literal;
+      this.consume(); // ]
+      return { type: "TypeReference", name };
+    }
+    return null;
+  }
+
+  private parseInterface(): ast.InterfaceDeclaration {
+    const nameNode = this.parseTypeRef()!;
+    if (this.peek()!.type === tok.PARTICLE) this.consume();
+    this.consume(); // 규정하자
+    const block = this.parseBlock();
+    return { type: "InterfaceDeclaration", name: nameNode, body: block.statements };
+  }
+
+  private parseClass(): ast.ClassDeclaration {
+    let baseClass: ast.TypeReference | null = null;
+    const interfaces: ast.TypeReference[] = [];
+    let nameNode: ast.TypeReference | null = null;
+
+    while (this.peek() !== null && this.peek()!.type !== tok.COLON && this.peek()!.type !== tok.DEDENT && this.peek()!.type !== tok.INDENT) {
+      const t = this.peek()!;
+
+      if (t.type === tok.TYPE || t.type === tok.LBRACKET) {
+        const tNode = this.parseTypeRef()!;
+
+        if (this.peek() && this.peek()!.type === tok.PARTICLE) this.consume();
+
+        if (this.peek() && this.peek()!.type === tok.KW_BASE) {
+          this.consume(); // 따라 하길 / 따라하고
+          baseClass = tNode;
+        } else if (this.peek() && this.peek()!.type === tok.KW_IMPLEMENTS) {
+          this.consume(); // 따르는 / 갖추는
+          interfaces.push(tNode);
+        } else if (this.peek() && this.peek()!.type === tok.KW_CLASS) {
+          nameNode = tNode;
+          this.consume(); // 설계하자 / 밑설계하자
+          break;
+        } else {
+          nameNode = tNode;
+        }
+      } else if (t.type === tok.KW_CLASS) {
+        this.consume();
+        break;
+      } else {
+        this.consume();
+      }
+    }
+
+    while (this.peek() !== null && this.peek()!.type !== tok.COLON) this.consume();
+    if (this.peek() && this.peek()!.type === tok.COLON) this.consume(); // :
+
+    const block = this.parseBlock();
+    return { type: "ClassDeclaration", name: nameNode!, baseClass, interfaces, body: block.statements };
+  }
+
+  private parseFunctionDecl(): ast.Statement {
+    let returnType: ast.TypeReference | null = null;
+    let isStatic = false;
+
+    while (this.peek() !== null && this.peek()!.type !== tok.FUNCTION && this.peek()!.type !== tok.COLON) {
+      const t = this.peek()!;
+      if (t.type === tok.TYPE || t.type === tok.LBRACKET) {
+        returnType = this.parseTypeRef();
+      } else if (t.type === tok.VAR || t.type === tok.IDENT) {
+        if (literalIn(t.literal, this.lang.pluralSelfWords)) isStatic = true;
+        this.consume();
+      } else {
+        this.consume();
+      }
+    }
+
+    const nameTok = this.consume();
+    let name = nameTok.literal;
+    name = name.slice(this.lang.delimLen, name.length - this.lang.delimLen); // FUNCTION 델리미터 제거
+    if (this.peek() && this.peek()!.type === tok.PARTICLE) this.consume();
+    const action = this.consume();
+
+    if (this.peek() && this.peek()!.type === tok.LPAREN) this.consume(); // (
+
+    const params: ast.Parameter[] = [];
+    while (this.peek() !== null && this.peek()!.type !== tok.RPAREN) {
+      const t = this.peek()!;
+      let typeAnn: ast.TypeReference | null = null;
+      if (t.type === tok.LBRACKET || t.type === tok.TYPE) {
+        typeAnn = this.parseTypeRef();
+        if (this.peek() && (this.peek()!.type === tok.TYPE_IN || this.peek()!.literal === this.lang.typeInWord)) {
+          this.consume(); // 인
+        }
+      }
+
+      let paramName: ast.Identifier | null = null;
+      if (this.peek() && (this.peek()!.type === tok.VAR || this.peek()!.type === tok.IDENT)) {
+        const expr = this.parsePrimary();
+        if (expr.type === "Identifier") paramName = expr;
+      } else if (this.peek() && this.peek()!.type === tok.PARTICLE) {
+        this.consume();
+        continue;
+      } else {
+        this.consume(); // unknown
+      }
+
+      if (paramName !== null) {
+        let defaultVal: ast.Expression | null = null;
+        if (this.peek() && this.peek()!.type === tok.ASSIGN) {
+          this.consume(); // =
+          defaultVal = this.parseExpression();
+        }
+        params.push({ name: paramName, typeAnnotation: typeAnn, default: defaultVal });
+      }
+
+      if (this.peek() && (this.peek()!.literal === "," || this.peek()!.type === tok.PARTICLE)) this.consume();
+    }
+    if (this.peek() && this.peek()!.type === tok.RPAREN) this.consume(); // )
+
+    const access = this.lang.accessModifierFromVerb(action.literal);
+
+    if (action.type === tok.KW_MUST_HAVE) {
+      return { type: "InterfaceMethod", name: { type: "Identifier", value: name } };
+    }
+
+    const block = this.parseBlock();
+    return {
+      type: "FunctionDeclaration",
+      name: { type: "Identifier", value: name },
+      params,
+      body: block,
+      accessModifier: access,
+      isStatic,
+      returnType,
+    };
+  }
+
+  private parseIf(): ast.IfStatement {
+    this.consume(); // 만약
+    return this.parseIfBody();
+  }
+
+  // parseIfBody parses everything after the leading if-keyword: condition,
+  // block, and any else/else-if tail. Split out from parseIf so KW_ELIF
+  // (unused by this lexer, kept for structural parity — see langProfile.ts's
+  // header comment) can recurse into it directly.
+  private parseIfBody(): ast.IfStatement {
+    const cond = this.parseCondition();
+    while (this.peek() !== null && this.peek()!.type !== tok.COLON) this.consume();
+    const block = this.parseBlock();
+
+    let alt: ast.BlockStatement | null = null;
+    if (this.peek() && this.peek()!.type === tok.KW_ELSE) {
+      this.consume(); // 그렇지 않다면 / 그렇지 않고
+      if (this.peek() && this.peek()!.type === tok.KW_IF) {
+        alt = { type: "BlockStatement", statements: [this.parseIf()] };
+      } else {
+        while (this.peek() !== null && this.peek()!.type !== tok.COLON) this.consume();
+        alt = this.parseBlock();
+      }
+    } else if (this.peek() && this.peek()!.type === tok.KW_ELIF) {
+      this.consume(); // もしくは
+      alt = { type: "BlockStatement", statements: [this.parseIfBody()] };
+    }
+
+    return { type: "IfStatement", condition: cond, consequent: block, alternate: alt };
+  }
+
+  // parseCondition: one comparison/operand, optionally chained with
+  // 그리고/또는 into a LogicalExpression, followed by an optional trailing
+  // '라면'.
+  private parseCondition(): ast.Expression {
+    let cond = this.parseConditionOperand();
+
+    while (this.peek() !== null && (this.peek()!.type === tok.KW_AND || this.peek()!.type === tok.KW_OR)) {
+      const opTok = this.consume();
+      const op = opTok.type === tok.KW_OR ? "또는" : "그리고";
+      const right = this.parseConditionOperand();
+      cond = { type: "LogicalExpression", left: cond, operator: op, right };
+    }
+
+    // '라면' 같은 식별자 무시
+    if (this.peek() && this.peek()!.type === tok.IDENT && literalIn(this.peek()!.literal, this.lang.conditionThenWords)) {
+      this.consume();
+    }
+
+    return cond;
+  }
+
+  // parseConditionOperand: a parenthesized (possibly compound) condition, or
+  // one comparison in SVO (`A 가 B 보다 크다`) or SOV (`A B 크다`) word order.
+  private parseConditionOperand(): ast.Expression {
+    let cond: ast.Expression;
+
+    if (this.peek() && this.peek()!.type === tok.LPAREN) {
+      this.consume();
+      cond = this.parseCondition();
+      if (this.peek() && this.peek()!.type === tok.RPAREN) this.consume();
+      return cond;
+    }
+    cond = this.parseExpression();
+    if (this.peek() && this.peek()!.type === tok.PARTICLE) this.consume();
+
+    const next = this.peek();
+    if (
+      next !== null &&
+      next.type !== tok.COMPARE &&
+      next.type !== tok.RPAREN &&
+      next.type !== tok.COLON &&
+      next.type !== tok.IDENT &&
+      next.type !== tok.KW_AND &&
+      next.type !== tok.KW_OR
+    ) {
+      // Possibly SOV: Left Right Compare
+      const right = this.parseExpression();
+      if (this.peek() && this.peek()!.type === tok.PARTICLE) this.consume();
+      if (this.peek() && this.peek()!.type === tok.COMPARE) {
+        const op = this.lang.normalizeCompareOpSOV(this.consume().literal);
+        cond = { type: "BinaryExpression", left: cond, operator: op, right };
+      }
+    } else if (next !== null && next.type === tok.COMPARE) {
+      // SVO: Left Compare Right
+      const op = this.lang.normalizeCompareOpSVO(this.consume().literal);
+      const right = this.parseExpression();
+      cond = { type: "BinaryExpression", left: cond, operator: op, right };
+    }
+
+    return cond;
+  }
+
+  // listPosition normalizes a leading particle ("앞에"/"뒤에서") to the AST's
+  // canonical "front"/"back" value.
+  private listPosition(particles: string[]): "front" | "back" {
+    if (particles.length > 0 && particles[0].includes(this.lang.frontMarker)) return "front";
+    return "back";
+  }
+
+  private parseGenericSov(): ast.Statement | null {
+    const components: Component[] = [];
+    for (;;) {
+      const t = this.peek();
+      if (t === null) break;
+      if (
+        t.type === tok.KW_MAKE ||
+        t.type === tok.KW_EXECUTE ||
+        t.type === tok.KW_PRINT ||
+        t.type === tok.KW_RETURN ||
+        t.type === tok.KW_LOOP ||
+        t.type === tok.KW_PUSH ||
+        t.type === tok.KW_POP ||
+        t.type === tok.KW_THROW ||
+        t.type === tok.KW_MUST_HAVE ||
+        t.type === tok.KW_IMPORT ||
+        t.type === tok.KW_ADD ||
+        t.type === tok.KW_SUB ||
+        t.type === tok.KW_SWITCH ||
+        t.type === tok.KW_FALLTHROUGH ||
+        t.type === tok.KW_INPUT
+      ) {
+        break;
+      }
+      const expr = this.parseExpression();
+      const parts: string[] = [];
+      while (
+        this.peek() !== null &&
+        (this.peek()!.type === tok.COMMA ||
+          this.peek()!.type === tok.PARTICLE ||
+          this.peek()!.type === tok.KW_FROM ||
+          this.peek()!.type === tok.TYPE_IN ||
+          this.peek()!.type === tok.KW_FRONT ||
+          this.peek()!.type === tok.KW_BACK)
+      ) {
+        const consumed = this.consume();
+        if (consumed.type === tok.PARTICLE || consumed.type === tok.KW_FRONT || consumed.type === tok.KW_BACK) {
+          parts.push(consumed.literal);
+        }
+      }
+      components.push({ expr, particles: parts });
+    }
+
+    if (this.peek() === null || this.peek()!.type === tok.EOF) return null;
+    const verb = this.consume();
+
+    if (verb.type === tok.KW_ADD || verb.type === tok.KW_SUB) {
+      const target = components[0].expr;
+      const val = components[1].expr;
+      const op = verb.type === tok.KW_SUB ? "-" : "+";
+      return { type: "Assignment", target, value: { type: "BinaryExpression", left: target, operator: op, right: val } };
+    }
+    if (verb.type === tok.KW_MAKE) {
+      const target = components[0].expr;
+      const val: ast.Expression | null = components.length > 1 ? components[1].expr : null;
+
+      const access = this.lang.accessModifierFromVerb(verb.literal);
+      const isConst = this.lang.isConstVerb(verb.literal);
+
+      if (target.type === "Identifier") {
+        return {
+          type: "VariableDeclaration",
+          name: target,
+          typeRef: null,
+          value: val,
+          isConstant: isConst,
+          accessModifier: access,
+          isStatic: false,
+          getter: null,
+          setter: null,
+        };
+      } else if (target.type === "MemberExpression") {
+        const isStaticRef = target.object.type === "StaticReference";
+        const isQuotedStatic = target.object.type === "Identifier" && literalIn(target.object.value, this.lang.pluralSelfWords);
+        if (isStaticRef || isQuotedStatic) {
+          if (target.property.type === "Identifier") {
+            return {
+              type: "VariableDeclaration",
+              name: target.property,
+              typeRef: null,
+              value: val,
+              isConstant: false,
+              accessModifier: access,
+              isStatic: true,
+              getter: null,
+              setter: null,
+            };
+          }
+        }
+        return { type: "Assignment", target, value: val! };
+      } else {
+        return { type: "Assignment", target, value: val! };
+      }
+    }
+    if (verb.type === tok.KW_EXECUTE) {
+      return { type: "ExpressionStatement", expression: components[0].expr };
+    }
+    if (verb.type === tok.KW_RETURN) {
+      if (components.length > 0) return { type: "ReturnStatement", value: components[0].expr };
+      return { type: "ReturnStatement", value: null };
+    }
+    if (verb.type === tok.KW_PRINT) {
+      const newLine = !this.lang.isPrintInlineVerb(verb.literal);
+      return { type: "PrintStatement", value: components[0].expr, newLine };
+    }
+    if (verb.type === tok.KW_LOOP) {
+      let loopVar = "";
+      if (this.peek() && this.peek()!.type === tok.LPAREN) {
+        this.consume(); // (
+        if (this.peek() && this.peek()!.type === tok.VAR) {
+          loopVar = this.consume().literal;
+          loopVar = loopVar.slice(this.lang.delimLen, loopVar.length - this.lang.delimLen);
+        }
+        if (this.peek() && this.peek()!.type === tok.RPAREN) this.consume(); // )
+      }
+      if (components.length >= 1) {
+        switch (this.lang.classifyLoop(verb, components)) {
+          case LoopKind.ForEach:
+            return { type: "ForEachLoop", list: components[0].expr, body: this.parseBlock() };
+          case LoopKind.While:
+            return { type: "WhileLoop", condition: components[0].expr, body: this.parseBlock() };
+          default:
+            if (components.length >= 2) {
+              return {
+                type: "ForRangeStatement",
+                start: components[0].expr,
+                end: components[1].expr,
+                loopVar,
+                body: this.parseBlock(),
+              };
+            }
+        }
+      }
+    }
+    if (verb.type === tok.KW_PUSH) {
+      if (components.length >= 2) {
+        return {
+          type: "ListPushStatement",
+          target: components[0].expr,
+          value: components[1].expr,
+          position: this.listPosition(components[0].particles),
+        };
+      }
+    }
+    if (verb.type === tok.KW_POP) {
+      if (components.length >= 1) {
+        return { type: "ListPopStatement", target: components[0].expr, position: this.listPosition(components[0].particles) };
+      }
+    }
+    if (verb.type === tok.KW_INPUT) {
+      const targetExpr = components[0].expr;
+      const targetId = targetExpr.type === "Identifier" ? targetExpr : null;
+      let typeAnn: ast.TypeReference | null = null;
+      if (components.length > 1 && components[1].expr.type === "TypeReference") {
+        typeAnn = components[1].expr;
+      }
+      return { type: "InputStatement", target: targetId, typeRef: typeAnn };
+    }
+    if (verb.type === tok.KW_FALLTHROUGH) {
+      return { type: "FallthroughStatement" };
+    }
+    if (verb.type === tok.KW_THROW) {
+      if (components.length > 0) return { type: "ThrowStatement", value: components[0].expr };
+    }
+    if (verb.type === tok.KW_MUST_HAVE) {
+      if (components.length > 0) {
+        // 인터페이스 메서드 규정 - V1 단순화
+        return { type: "ExpressionStatement", expression: components[0].expr };
+      }
+    }
+    if (verb.type === tok.KW_SWITCH) {
+      if (components.length > 0) {
+        const cases: ast.SwitchCase[] = [];
+        if (this.peek() && this.peek()!.type === tok.COLON) this.consume();
+        if (this.peek() && this.peek()!.type === tok.INDENT) this.consume();
+        while (this.peek() !== null && this.peek()!.type !== tok.DEDENT && this.peek()!.type !== tok.EOF) {
+          if (this.peek()!.type === tok.INDENT) {
+            this.consume();
+            continue;
+          }
+          if (this.peek()!.type === tok.KW_DEFAULT) {
+            this.consume(); // 나머지는
+            if (this.peek() && this.peek()!.type === tok.COLON) this.consume();
+            const cBody = this.parseBlock();
+            cases.push({ tests: [], consequent: cBody, isDefault: true });
+          } else {
+            const tests: ast.Expression[] = [];
+            while (this.peek() !== null) {
+              if (this.peek()!.type === tok.TYPE_IN) {
+                this.consume(); // 인
+                if (this.peek() && this.peek()!.type === tok.KW_CASE) this.consume(); // 경우
+                break;
+              }
+              if (this.peek()!.type === tok.KW_CASE) {
+                this.consume(); // 場合
+                break;
+              }
+              const expr = this.parseExpression();
+              tests.push(expr);
+              if (this.peek() && this.peek()!.type === tok.COMMA) this.consume();
+            }
+            if (this.peek() && this.peek()!.type === tok.COLON) this.consume();
+            const cBody = this.parseBlock();
+            cases.push({ tests, consequent: cBody, isDefault: false });
+          }
+        }
+        if (this.peek() && this.peek()!.type === tok.DEDENT) this.consume();
+        return { type: "SwitchStatement", discriminant: components[0].expr, cases };
+      }
+    }
+    if (verb.type === tok.KW_IMPORT) {
+      if (components.length >= 2) {
+        let moduleName = "";
+        let isBuiltin = false;
+
+        const c0 = components[0].expr;
+        if (c0.type === "Identifier") moduleName = c0.value;
+        else if (c0.type === "StringLiteral") moduleName = c0.value;
+        else if (c0.type === "TypeReference") {
+          moduleName = c0.name;
+          isBuiltin = true;
+        } else if (c0.type === "ListLiteral" && c0.elements.length > 0 && c0.elements[0].type === "Identifier") {
+          moduleName = c0.elements[0].value;
+          isBuiltin = true;
+        }
+
+        const target = importNameFromExpr(components[1].expr);
+
+        let as = "";
+        if (components.length >= 3 && hasParticle(components[2].particles, ...this.lang.importAsParticles)) {
+          as = importNameFromExpr(components[2].expr);
+        }
+
+        return { type: "ImportStatement", module: moduleName, target, as, isBuiltin };
+      }
+    }
+
+    return null;
+  }
+
+  parseExpression(): ast.Expression {
+    let expr = this.parseMemberAndCall();
+
+    for (;;) {
+      const t = this.peek();
+      if (t === null) break;
+      if (t.type === tok.OP) {
+        const op = this.consume().literal;
+        const right = this.parseMemberAndCall();
+        expr = { type: "BinaryExpression", left: expr, operator: op, right };
+      } else {
+        break;
+      }
     }
     return expr;
   }
 
-  parse_generic_sov(): ASTNode | null {
-    const components: any[] = [];
-    const verbs = ['KW_ASSIGN', 'KW_DECLARE', 'KW_ADD', 'KW_SUB', 'KW_APPEND', 'KW_POP', 'KW_PRINT', 'KW_PRINT_INLINE', 'KW_INPUT', 'KW_RETURN', 'KW_EXECUTE', 'KW_THROW', 'KW_FOREACH', 'KW_WHILE', 'KW_IMPORT', 'KW_SWITCH', 'KW_FALLTHROUGH'];
-    
-    let isStatic = false;
+  private parseMemberAndCall(): ast.Expression {
+    let expr = this.parsePrimary();
 
-    while (this.peek() && !verbs.includes(this.peek()!.type)) {
-      if (this.peek()?.type === 'TYPE') {
-        const saved = this.pos;
-        const t = this.consume();
-        if (this.peek()?.type === 'TYPE_IN') {
-          this.consume('TYPE_IN');
-          components.push({ role: "type_cast", type_val: t.value });
-          continue;
-        } else {
-          this.pos = saved; // backtrack
-        }
-      }
-      
-      if (this.peek()?.type === 'KW_FRONT') {
-        components.push({ role: "pos_front" });
+    for (;;) {
+      const t = this.peek();
+      if (t === null) break;
+      if (
+        t.type === tok.PARTICLE &&
+        t.literal === this.lang.memberParticle &&
+        this.peek(1) !== null &&
+        this.peek(1)!.type === tok.IDENT &&
+        this.peek(1)!.literal === this.lang.poppedValueWord
+      ) {
+        // 카나데는 인덱싱 뒤에 장식용 "の値"를 조사로 붙인다 — 여기서 감지해 건너뛴다.
+        this.consume(); // の
+        this.consume(); // 값/値
+      } else if (
+        t.type === tok.PARTICLE &&
+        t.literal === this.lang.memberParticle &&
+        !(this.peek(1) !== null && (this.peek(1)!.type === tok.KW_FRONT || this.peek(1)!.type === tok.KW_BACK))
+      ) {
         this.consume();
-        if (this.peek()?.type === 'PARTICLE') this.consume();
-        continue;
-      }
-      
-      if (this.peek()?.type === 'KW_BACK') {
-        components.push({ role: "pos_back" });
+        const prop = this.parsePrimary();
+        expr = { type: "MemberExpression", object: expr, property: prop };
+      } else if (t.type === tok.PARTICLE && t.literal === this.lang.memberParticle) {
         this.consume();
-        if (this.peek()?.type === 'PARTICLE') this.consume();
-        continue;
-      }
-      
-      const expr = this.parse_expression();
-      let part = null;
-      if (this.peek()?.type === 'PARTICLE') {
-        part = this.consume().value;
-      }
-      components.push({ expr, particle: part });
-    }
-    
-    if (!this.peek()) return null;
-    const verb = this.consume();
-    
-    if (verb.type === 'KW_ASSIGN' || verb.type === 'KW_DECLARE') {
-      let target = components.length > 0 ? components[0].expr : null;
-      let typeAnnotation = null;
-      let init_val = null;
-      for (const c of components) {
-        if (c.role === "type_cast") typeAnnotation = this.parse_type_reference(c.type_val);
-        else if (c.expr && c !== components[0]) init_val = c.expr;
-      }
-      
-      const isConst = verb.value.includes('고정하자');
-      const isDeclarationOnly = verb.type === 'KW_DECLARE';
-      
-      let getter = null;
-      let setter = null;
-      
-      if (this.peek()?.type === 'COLON') {
-        this.consume('COLON');
-        if (this.peek()?.type === 'INDENT') {
-          this.consume('INDENT');
-          while (this.peek() && this.peek()?.type !== 'DEDENT') {
-            if (this.peek()?.type === 'KW_GETTER') {
-              this.consume('KW_GETTER');
-              const blk = this.parse_block();
-              getter = blk.body;
-            } else if (this.peek()?.type === 'KW_SETTER') {
-              this.consume('KW_SETTER');
-              this.consume('LPAREN');
-              const p = this.consume('VARIABLE').value.slice(1, -1);
-              this.consume('RPAREN');
-              const blk = this.parse_block();
-              setter = { param: { type: "Identifier", name: p }, body: blk.body };
-            } else {
-              break; // unknown
-            }
-          }
-          if (this.peek()?.type === 'DEDENT') this.consume('DEDENT');
+      } else if (t.type === tok.LPAREN) {
+        this.consume(); // (
+        const args: ast.Expression[] = [];
+        while (this.peek() !== null && this.peek()!.type !== tok.RPAREN) {
+          args.push(this.parseExpression());
+          if (this.peek() && (this.peek()!.type === tok.COMMA || this.peek()!.type === tok.PARTICLE)) this.consume();
         }
+        if (this.peek() && this.peek()!.type === tok.RPAREN) this.consume(); // )
+        expr = { type: "CallExpression", callee: expr, arguments: args };
+      } else if ((t.type === tok.KW_FRONT || t.type === tok.KW_BACK) && this.peek(1) !== null && this.peek(1)!.type === tok.KW_POPPED) {
+        const pos: "front" | "back" = t.type === tok.KW_FRONT ? "front" : "back";
+        this.consume(); // 앞에서/뒤에서
+        this.consume(); // 꺼낸
+        if (this.peek() && this.peek()!.type === tok.IDENT && this.peek()!.literal === this.lang.poppedValueWord) {
+          this.consume(); // 값 (가독성용 옵션 토큰)
+        }
+        expr = { type: "ListPopExpression", target: expr, position: pos };
+      } else {
+        break;
       }
-      
-      if (target?.type === 'MemberExpression' && target.object.type === 'Identifier' && target.object.name === '우리' && (verb.type === 'KW_ASSIGN' || verb.type === 'KW_DECLARE')) {
-        isStatic = true;
-        target = target.property;
+    }
+    return expr;
+  }
+
+  private parsePrimary(): ast.Expression {
+    const t = this.consume();
+    if (t.type === tok.OP && t.literal === "-") {
+      const next = this.consume();
+      if (next.type === tok.INT) {
+        return { type: "NumberLiteral", value: parseFloat("-" + next.literal) };
       }
-      if (!isConst && !isDeclarationOnly && !typeAnnotation && target?.type === 'MemberExpression' && !getter && !setter) {
-        let op = "=";
-        if (verb.value.includes('더하자')) op = "+=";
-        else if (verb.value.includes('빼자')) op = "-=";
-        if (op === "=") return { type: "Assignment", target, value: init_val };
-        return { type: "CompoundAssignment", operator: op, target, value: init_val };
+      return { type: "StringLiteral", value: "알수없음: -" };
+    }
+    if (t.type === tok.STRING) {
+      const val = t.literal.slice(this.lang.delimLen, t.literal.length - this.lang.delimLen);
+      return { type: "StringLiteral", value: val };
+    }
+    if (t.type === tok.TEMPLATE_STRING) {
+      let val = t.literal;
+      if (val.startsWith(this.lang.templatePrefix)) val = val.slice(this.lang.templatePrefix.length);
+      if (val.endsWith(this.lang.templateSuffix)) val = val.slice(0, val.length - this.lang.templateSuffix.length);
+      return { type: "TemplateLiteral", value: val };
+    }
+    if (t.type === tok.VAR) {
+      const val = t.literal.slice(this.lang.delimLen, t.literal.length - this.lang.delimLen);
+      return { type: "Identifier", value: val };
+    }
+    if (t.type === tok.FUNCTION) {
+      let val = t.literal.slice(this.lang.delimLen, t.literal.length - this.lang.delimLen);
+      if (val === this.lang.constructorFunctionName) val = "__init__";
+      return { type: "FunctionReference", name: val };
+    }
+    if (t.type === tok.KW_NULL) return { type: "NullLiteral" };
+    if (t.type === tok.KW_TRUE) return { type: "BooleanLiteral", value: true };
+    if (t.type === tok.KW_FALSE) return { type: "BooleanLiteral", value: false };
+    if (t.type === tok.INT) return { type: "NumberLiteral", value: parseFloat(t.literal) };
+    if (t.type === tok.KW_SELF) return { type: "SelfReference" };
+    if (t.type === tok.KW_PARENT) return { type: "SuperReference" };
+    if (t.type === tok.IDENT) {
+      if (literalIn(t.literal, this.lang.pluralSelfWords)) return { type: "StaticReference" };
+      return { type: "Identifier", value: t.literal };
+    }
+    if (t.type === tok.KW_NEW) {
+      const cls = this.parseTypeRef()!;
+      const args: ast.Expression[] = [];
+      if (this.peek() && this.peek()!.type === tok.LPAREN) {
+        this.consume(); // (
+        while (this.peek() !== null && this.peek()!.type !== tok.RPAREN) {
+          args.push(this.parseExpression());
+          if (this.peek() && (this.peek()!.type === tok.COMMA || this.peek()!.type === tok.PARTICLE)) this.consume();
+        }
+        if (this.peek() && this.peek()!.type === tok.RPAREN) this.consume(); // )
       }
-      
-      const acc = verb.value.includes('숨기자') ? "private" : verb.value.includes('물려주자') ? "protected" : "public";
-      
-      return { 
-        type: "VariableDeclaration", 
-        target, 
-        isStatic,
-        accessModifier: acc,
-        typeAnnotation, 
-        value: isDeclarationOnly ? null : init_val, 
-        isConst, 
-        isDeclarationOnly,
-        getter,
-        setter
-      };
-    } else if (verb.type === 'KW_ADD') {
-      let target = components[0]?.expr;
-      let init_val = components[1]?.expr;
-      if (target && (target.type === 'MemberExpression' || target.type === 'Identifier')) {
-        return { type: "CompoundAssignment", operator: "+=", target, value: init_val };
+      return { type: "NewExpression", class: cls, arguments: args };
+    }
+    if (t.type === tok.TYPE) {
+      let val = t.literal;
+      if (val.startsWith(this.lang.typeOpen) && val.endsWith(this.lang.typeClose)) {
+        val = val.slice(this.lang.delimLen, val.length - this.lang.delimLen);
       }
-    } else if (verb.type === 'KW_SUB') {
-      let target = components[0]?.expr;
-      let init_val = components[1]?.expr;
-      if (target && (target.type === 'MemberExpression' || target.type === 'Identifier')) {
-        return { type: "CompoundAssignment", operator: "-=", target, value: init_val };
+      const typeRef: ast.TypeReference = { type: "TypeReference", name: val };
+
+      if (this.peek() && (this.peek()!.type === tok.TYPE_IN || this.peek()!.literal === this.lang.typeInWord)) {
+        if (this.peek(1) !== null && this.peek(1)!.type === tok.TYPE) {
+          this.consume(); // の
+          return this.parsePrimary();
+        }
+        if (this.peek(1) !== null && this.peek(1)!.type === tok.FUNCTION) {
+          this.consume(); // の
+          const prop = this.parsePrimary();
+          return { type: "MemberExpression", object: typeRef, property: prop };
+        }
+        this.consume(); // 인
+        return this.parsePrimary();
       }
-    } else if (verb.type === 'KW_IMPORT') {
-      return { type: "ImportStatement", module: { kind: "user", name: components[0].expr.value }, imports: null };
-    } else if (verb.type === 'KW_APPEND') {
-      let pos = "back";
-      if (components.find(c => c.role === 'pos_front')) pos = "front";
-      
-      const exprs = components.filter(c => c.expr).map(c => c.expr);
-      const target = exprs[0];
-      const val = exprs[1];
-      
-      return { type: "ListPushStatement", target: target, value: val, position: pos };
-    } else if (verb.type === 'KW_POP') {
-      let pos = "back";
-      if (components.find(c => c.role === 'pos_front')) pos = "front";
-      
-      const exprs = components.filter(c => c.expr).map(c => c.expr);
-      const target = exprs[0];
-      
-      return { type: "ListPopStatement", target: target, position: pos };
-    } else if (verb.type === 'KW_PRINT') {
-      return { type: "PrintStatement", value: components[0].expr };
-    } else if (verb.type === 'KW_PRINT_INLINE') {
-      return { type: "PrintInlineStatement", value: components[0].expr };
-    } else if (verb.type === 'KW_INPUT') {
-      let target = null;
-      let typeAnnotation = null;
-      for (const c of components) {
-        if (c.role === "type_cast") typeAnnotation = this.parse_type_reference(c.type_val);
-        else if (c.expr && !target) target = c.expr;
+      return typeRef;
+    }
+    if (t.type === tok.LBRACKET) {
+      const elements: ast.Expression[] = [];
+      while (this.peek() !== null && this.peek()!.type !== tok.RBRACKET) {
+        elements.push(this.parseExpression());
+        if (this.peek() && (this.peek()!.type === tok.COMMA || this.peek()!.type === tok.PARTICLE)) this.consume();
       }
-      return { type: "InputStatement", target, typeAnnotation };
-    } else if (verb.type === 'KW_RETURN') {
-      const exprs = components.filter(c => c.expr).map(c => c.expr);
-      return { type: "ReturnStatement", value: exprs.length > 0 ? exprs[0] : null };
-    } else if (verb.type === 'KW_EXECUTE') {
-      return { type: "ExpressionStatement", expression: components[0].expr };
-    } else if (verb.type === 'KW_THROW') {
-      return { type: "ThrowStatement", error: components[0].expr };
-    } else if (verb.type === 'KW_FALLTHROUGH') {
-      return { type: "FallthroughStatement" };
-    } else if (verb.type === 'KW_SWITCH') {
-      const target_expr = components[0].expr;
-      this.consume('COLON');
-      if (this.peek()?.type === 'INDENT') this.consume('INDENT');
-      
-      const cases = [];
-      let default_block = null;
-      
-      while (this.peek() && this.peek()?.type !== 'DEDENT') {
-        if (this.peek()?.type === 'KW_DEFAULT') {
-          this.consume('KW_DEFAULT');
-          const block = this.parse_block();
-          default_block = block.body;
+      if (this.peek() && this.peek()!.type === tok.RBRACKET) this.consume();
+      return { type: "ListLiteral", elements };
+    }
+    if (t.type === tok.LBRACE) {
+      const properties: ast.Property[] = [];
+      while (this.peek() !== null && this.peek()!.type !== tok.RBRACE) {
+        const key = this.parseExpression();
+        if (this.peek() && this.peek()!.type === tok.COLON) this.consume();
+        const val = this.parseExpression();
+        properties.push({ key, value: val });
+        if (this.peek() && (this.peek()!.type === tok.COMMA || this.peek()!.type === tok.PARTICLE)) this.consume();
+      }
+      if (this.peek() && this.peek()!.type === tok.RBRACE) this.consume();
+      return { type: "DictLiteral", properties };
+    }
+    if (t.type === tok.LPAREN) {
+      const expr = this.parseCondition();
+      if (this.peek() && this.peek()!.type === tok.RPAREN) this.consume();
+      return expr;
+    }
+    return { type: "StringLiteral", value: `알수없음: ${t.literal}` };
+  }
+
+  private parseConstructor(): ast.ConstructorDeclaration {
+    this.consume();
+    const params: ast.Parameter[] = [];
+    if (this.peek() && this.peek()!.type === tok.LPAREN) {
+      this.consume();
+      while (this.peek() !== null && this.peek()!.type !== tok.RPAREN) {
+        let typeAnn: ast.TypeReference | null = null;
+        if (this.peek()!.type === tok.LBRACKET || this.peek()!.type === tok.TYPE) {
+          typeAnn = this.parseTypeRef();
+          if (this.peek() && (this.peek()!.type === tok.TYPE_IN || this.peek()!.literal === this.lang.typeInWord)) {
+            this.consume();
+          }
+        }
+        let paramName: ast.Identifier | null = null;
+        if (this.peek() && this.peek()!.type === tok.VAR) {
+          const expr = this.parsePrimary();
+          if (expr.type === "Identifier") paramName = expr;
         } else {
-          const case_vals = [];
-          while (true) {
-            case_vals.push(this.parse_expression());
-            if (this.peek()?.type === 'COMMA') this.consume('COMMA');
-            else if (this.peek()?.type === 'KW_CASE') {
-              this.consume('KW_CASE');
-              break;
-            } else {
-              throw new Error("SyntaxError: '일 때'를 찾을 수 없어요. (스위치 구문)");
-            }
+          this.consume();
+        }
+        if (paramName !== null) {
+          let defaultVal: ast.Expression | null = null;
+          if (this.peek() && this.peek()!.type === tok.ASSIGN) {
+            this.consume(); // =
+            defaultVal = this.parseExpression();
           }
-          const block = this.parse_block();
-          cases.push({ values: case_vals, body: block.body });
+          params.push({ name: paramName, typeAnnotation: typeAnn, default: defaultVal });
         }
       }
-      if (this.peek()?.type === 'DEDENT') this.consume('DEDENT');
-      return { type: "SwitchStatement", discriminant: target_expr, cases, default: default_block };
-    } else if (verb.type === 'KW_WHILE') {
-      const cond = components[0].expr;
-      const block = this.parse_block();
-      return { type: "WhileLoop", condition: cond, body: block.body };
-    } else if (verb.type === 'KW_FOREACH') {
-      const expr = components[0].expr;
-      if (expr.type !== 'MemberExpression') {
-        throw new HajaError("SyntaxError: 반복문은 '배열(목록)'의 '항목'마다 반복하자 형식이어야 해요.", verb.line, verb.col);
-      }
-      const block = this.parse_block();
-      return { type: "ForEachLoop", iterable: expr.object, item: expr.property, body: block.body };
+      this.consume();
     }
-    return null;
+    if (this.peek() && this.peek()!.type === tok.KW_DO_AS) this.consume();
+    while (this.peek() !== null && this.peek()!.type !== tok.COLON) this.consume();
+    const block = this.parseBlock();
+    return { type: "ConstructorDeclaration", id: { type: "Identifier", value: this.lang.constructorFunctionName }, params, body: block.statements };
   }
 }
 
+// importNameFromExpr extracts a plain name from the shapes an import
+// target/alias can take: a quoted identifier ('이름'), a plain string
+// ("이름"), or a function reference (<이름>).
+function importNameFromExpr(expr: ast.Expression): string {
+  if (expr.type === "Identifier") return expr.value;
+  if (expr.type === "StringLiteral") return expr.value;
+  if (expr.type === "FunctionReference") return expr.name;
+  return "";
+}
 
+function hasParticle(particles: string[], ...want: string[]): boolean {
+  return particles.some((p) => want.includes(p));
+}
+
+// Kept for callers (evalExpr.ts's TemplateLiteral case) that need to lex+parse
+// an embedded `{...}` expression the same way the top-level Lexer/Parser pair
+// would.
+export function parseExpressionFromSource(code: string): ast.Expression {
+  const lexer = new Lexer(code);
+  const parser = new Parser(lexer.tokens);
+  return parser.parseExpression();
+}
