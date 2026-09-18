@@ -3,7 +3,6 @@ layout: ../../../layouts/DocLayout.astro
 title: 2. 구문 트리(AST) 구조
 description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ---
-# 하자(Haja) 언어 AST (추상 구문 트리) 명세서
 
 이 문서는 하자 언어 파서(`Parser`)가 생성하는 AST(Abstract Syntax Tree)의 노드별 JSON 스키마를 정의하고 있어요. 하자 언어의 인터프리터, 컴파일러, 정적 분석기 등 모든 도구는 이 명세서를 기준으로 구현된답니다.
 
