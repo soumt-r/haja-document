@@ -5,7 +5,7 @@ import * as ast from "./ast";
 import type { HajaInterpreter } from "./interpreter";
 import { Environment } from "./env";
 import { HajaObject } from "./object";
-import { checkType, checkArgumentType, type TypeHost } from "./typecheck";
+import { checkType, checkArgumentType, describe, type TypeHost, type TypeNames } from "./typecheck";
 
 class InterpreterTypeHost implements TypeHost {
   constructor(private i: HajaInterpreter) {}
@@ -27,6 +27,11 @@ class InterpreterTypeHost implements TypeHost {
     }
     return false;
   }
+}
+
+// describeType names a value's type in the language's words (for operator errors).
+export function describeType(names: TypeNames, v: unknown, i: HajaInterpreter): string {
+  return describe(names, v, host(i));
 }
 
 function host(i: HajaInterpreter): TypeHost {
