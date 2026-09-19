@@ -191,6 +191,10 @@ const EXTRA_CASES: { name: string; code: string; stdin?: string }[] = [
     { name: "표준: 인코딩: 16진수 아닌 주소", code: "[인코딩]에서 <주소디코딩>를 가져오자\n<주소디코딩>(\"%zz\")를 출력하자\n" },
     { name: "표준: 해시: SHA256", code: "[해시]에서 <SHA256>를 가져오자\n<SHA256>(\"\")를 출력하자\n<SHA256>(\"abc\")를 출력하자\n<SHA256>(\"한글\")을 출력하자\n<SHA256>(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")를 출력하자\n" },
     { name: "표준: 고유번호 모양", code: "[무작위]에서 <고유번호>를 가져오자\n[정규식]에서 <검사>를 가져오자\n<검사>(<고유번호>(), \"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$\")를 출력하자\n" },
+    { name: "표준: 기다리기", code: "[날짜]에서 <기다리기>를 가져오자\n<기다리기>(0.05)를 실행하자\n\"끝\"을 출력하자" },
+    { name: "표준: 기다리기 음수", code: "[날짜]에서 <기다리기>를 가져오자\n<기다리기>((0 - 1))을 실행하자" },
+    { name: "표준: 기다리기 너무 김", code: "[날짜]에서 <기다리기>를 가져오자\n<기다리기>(3601)을 실행하자" },
+    { name: "표준: 기다리기 인자 종류", code: "[날짜]에서 <기다리기>를 가져오자\n<기다리기>(\"잠깐\")을 실행하자" },
 ];
 
 // 구문 오류 문구: TS 엔진의 진단을 현지화한 문장이 hana가 보여 주는 문장과 같아야 한다.
