@@ -54,5 +54,6 @@ export const lspKeywords = {
   words: [
     "돌려주는",
     "우리",
+    "전부",
   ],
 } as const;

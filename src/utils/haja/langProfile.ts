@@ -41,6 +41,9 @@ export interface LangProfile {
   normalizeCompareOpSOV(op: string): string;
   normalizeCompareOpSVO(op: string): string;
   importAsParticles: string[];
+  // The word that imports a whole module, and the particles joining an import list's items.
+  importAllWord: string;
+  importJoinParticles: string[];
   delimLen: number;
   typeOpen: string;
   typeClose: string;
@@ -99,6 +102,8 @@ export const hajaProfile: LangProfile = {
     return op;
   },
   importAsParticles: ["로", "으로"],
+  importAllWord: "전부",
+  importJoinParticles: ["와", "과"],
   delimLen: 1,
   typeOpen: "[",
   typeClose: "]",
