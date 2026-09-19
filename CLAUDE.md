@@ -41,7 +41,7 @@ Consult these guides before working on related tasks:
 
 `src/utils/haja/stdNames.ts`도 `../hana`(Go)의 `std` 이름표에서 **생성되는 파일**입니다. 직접 고치지 말고 `hana/std`를 고친 뒤
 `cd ../hana && go run ./cmd/stdgen -haja ../haja-docs/src/utils/haja/stdNames.ts -kanade ../kanade-docs/src/utils/kanade/stdNames.ts`
-로 다시 만드세요(`-check` 옵션으로 최신 여부 확인). 새 네이티브 함수의 동작은 `stdImpls.ts`의 `nativeImpls`에 ID로 구현합니다(Go의 `hana/std/stdimpl`을 손으로 미러링한 것 — 먼저 Go를 고치고 여기를 맞추세요. `compare_tests.ts`의 '표준:' 케이스가 결과를 비교해요).
+로 다시 만드세요(`-check` 옵션으로 최신 여부 확인). `stdNames.ts`에 `nativeOnly: true`가 붙은 모듈은 hana 실행기에서만 쓸 수 있는 것(파일 등)이라 `stdImpls.ts`에 구현하지 않습니다 — `stdlib.ts`가 이름만 기억해 두고 임포트하면 `ImportNativeOnly` 에러를 내요. 새 네이티브 함수의 동작은 `stdImpls.ts`의 `nativeImpls`에 ID로 구현합니다(Go의 `hana/std/stdimpl`을 손으로 미러링한 것 — 먼저 Go를 고치고 여기를 맞추세요. `compare_tests.ts`의 '표준:' 케이스가 결과를 비교해요).
 
 구문 오류도 Go와 같습니다: 파서가 알 수 없는 토큰과 글자를 `parser.diagnostics`(줄·열)로 모아 두고, `index.ts`(실행)와 `hajaLSP.ts`(편집기 밑줄)가 `errs.ts`의 `syntaxError`/`message`로 같은 문구를 냅니다. 문구는 `hana/errs`의 `SyntaxError.*` 코드에서 생성되며, `compare_tests.ts`가 Go와 문구를 비교합니다.
 
