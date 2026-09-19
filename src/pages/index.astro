@@ -1,11 +1,5 @@
 ---
 import Layout from '../layouts/Layout.astro';
-
-const principles = [
-  { no: '01', title: '읽으면 그대로 뜻이 돼요', body: '코드가 우리말 문장이에요. 영어를 몰라도 무슨 일을 하는지 읽혀요.' },
-  { no: '02', title: '객체지향까지 갖췄어요', body: '클래스, 상속, 인터페이스, 예외 처리. 작은 스크립트부터 큰 설계까지 같은 문법으로 가요.' },
-  { no: '03', title: '설치 없이 바로 해봐요', body: '브라우저 놀이터에서 예제를 고쳐 가며 실행할 수 있어요.' },
-];
 ---
 
 <Layout title="하자(Haja) 언어" customMaxWidth="max-w-5xl">
@@ -37,17 +31,5 @@ const principles = [
         <span class="text-ink-faint">무엇을, 어떻게, 그리고 -하자.</span>
       </figcaption>
     </figure>
-  </section>
-
-  <section class="border-t border-rule">
-    <ol class="grid md:grid-cols-3">
-      {principles.map((p, i) => (
-        <li class={`py-10 md:px-8 ${i === 0 ? 'md:pl-0' : 'md:border-l border-rule'} ${i < principles.length - 1 ? 'border-b md:border-b-0 border-rule' : ''}`}>
-          <p class="font-mono text-xs text-verb mb-4">{p.no}</p>
-          <h2 class="font-display font-bold text-xl mb-3 leading-snug" style="letter-spacing:-0.02em">{p.title}</h2>
-          <p class="text-ink-soft leading-relaxed">{p.body}</p>
-        </li>
-      ))}
-    </ol>
   </section>
 </Layout>
