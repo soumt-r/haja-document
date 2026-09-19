@@ -16,6 +16,7 @@ import { BuiltinFunction, type BuiltinFn, type NativeModule } from "./object";
 import { RuntimeError, Codes, localize } from "./errs";
 
 export class HajaInterpreter {
+  callDepth = 0;
   ast: ast.Program;
   globalEnv: Environment;
   classes: Record<string, ast.ClassDeclaration> = {};

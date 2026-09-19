@@ -101,3 +101,7 @@ export const KoreanConfig: LangConfig = {
   equalsMethodName: "기호 같다",
   locale: "ko",
 };
+
+// Bounds nested calls so runaway recursion becomes a catchable RecursionError,
+// the same number as hana's vm.MaxCallDepth.
+export const MAX_CALL_DEPTH = 10000;
