@@ -11,6 +11,9 @@ import { localize, syntaxError } from './src/utils/haja/errs.ts';
 const DOCS_DIR = './src/pages/docs';
 
 // 난수와 현재 시각을 쓰는 예제는 실행마다 결과가 달라서, 에러 없이 끝나는지만 본다.
+// [파일] 같은 NativeOnly 모듈을 쓰는 예제는 브라우저 엔진이 전용 에러로 거절하는 게 맞다.
+const NATIVE_ONLY = /\[파일\]/;
+
 const NONDETERMINISTIC = /\[무작위\]|<지금>/;
 const GO_EXECUTABLE = '..\\hana\\hana.exe';
 
@@ -80,6 +83,10 @@ async function walk(dir: string, callback: (path: string) => Promise<void>) {
         }
     }
 }
+
+const BROWSER_ONLY_CASES: { name: string; code: string; wantError: string }[] = [
+    { name: "파일 모듈은 브라우저에서 못 씀", code: "[파일]에서 <읽기>를 가져오자\n<읽기>(\"a.txt\")를 출력하자", wantError: "브라우저에서 사용할 수 없어요" },
+];
 
 // 문서 예제에는 없지만 두 엔진이 같아야 하는 동작: 표준 라이브러리(std) 임포트.
 const EXTRA_CASES: { name: string; code: string; stdin?: string }[] = [
@@ -236,7 +243,7 @@ async function main() {
             const tsOutput = await runTypeScriptEngine(code);
             const goOutput = runGoEngine(code);
             
-            if (tsOutput === goOutput || (NONDETERMINISTIC.test(code) && !tsOutput.includes('!! ') && !goOutput.includes('오류') && !goOutput.includes('エラー'))) {
+            if (NATIVE_ONLY.test(code) ? tsOutput.includes('브라우저에서 사용할 수 없어요') : (tsOutput === goOutput || (NONDETERMINISTIC.test(code) && !tsOutput.includes('!! ') && !goOutput.includes('오류') && !goOutput.includes('エラー')))) {
                 passed++;
             } else {
                 console.log(`❌ [불일치] 파일: ${path} (블록 ${i + 1})`);
@@ -246,6 +253,23 @@ async function main() {
             }
         }
     });
+
+    // hana에는 있지만 브라우저에서는 쓸 수 없는 모듈(std의 NativeOnly): Go 출력과 비교하지 않고,
+    // 브라우저 엔진이 전용 에러로 거절하는지만 본다.
+    for (const c of BROWSER_ONLY_CASES) {
+        total++;
+        const tsOutput = await runTypeScriptEngine(c.code);
+        if (tsOutput.includes(c.wantError)) {
+            passed++;
+        } else {
+            console.log(`❌ [불일치] 브라우저 전용 케이스: ${c.name}`);
+            console.log(`-- 기대한 에러 --
+${c.wantError}
+-- TS 출력 --
+${tsOutput}
+`);
+        }
+    }
 
     for (const c of EXTRA_CASES) {
         total++;

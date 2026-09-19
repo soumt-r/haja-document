@@ -119,6 +119,23 @@ export const stdModules: readonly StdModule[] = [
     ],
   },
   {
+    id: "file",
+    name: "파일",
+    nativeOnly: true,
+    functions: [
+      { id: "file.read", name: "읽기" },
+      { id: "file.lines", name: "줄읽기" },
+      { id: "file.write", name: "쓰기" },
+      { id: "file.append", name: "덧붙이기" },
+      { id: "file.exists", name: "있는지" },
+      { id: "file.isdir", name: "폴더인지" },
+      { id: "file.delete", name: "지우기" },
+      { id: "file.list", name: "목록" },
+      { id: "file.mkdir", name: "폴더만들기" },
+      { id: "file.move", name: "옮기기" },
+    ],
+  },
+  {
     id: "regex",
     name: "정규식",
     functions: [
