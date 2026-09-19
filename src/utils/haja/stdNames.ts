@@ -10,4 +10,43 @@ export const stdModules = [
       { id: "math.floor", name: "버림" },
     ],
   },
+  {
+    id: "json",
+    name: "JSON",
+    functions: [
+      { id: "json.parse", name: "파싱" },
+      { id: "json.stringify", name: "문자열화" },
+    ],
+  },
+  {
+    id: "random",
+    name: "무작위",
+    functions: [
+      { id: "random.float", name: "실수" },
+      { id: "random.int", name: "정수" },
+      { id: "random.choice", name: "고르기" },
+      { id: "random.shuffle", name: "섞기" },
+    ],
+  },
+  {
+    id: "datetime",
+    name: "날짜",
+    functions: [
+      { id: "datetime.now", name: "지금" },
+      { id: "datetime.format", name: "서식" },
+      { id: "datetime.parse", name: "읽기" },
+    ],
+  },
+  {
+    id: "regex",
+    name: "정규식",
+    functions: [
+      { id: "regex.test", name: "검사" },
+      { id: "regex.find", name: "찾기" },
+      { id: "regex.groups", name: "그룹" },
+      { id: "regex.findall", name: "모두찾기" },
+      { id: "regex.replace", name: "치환" },
+      { id: "regex.split", name: "분할" },
+    ],
+  },
 ] as const;
