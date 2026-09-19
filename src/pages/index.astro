@@ -9,32 +9,33 @@ const principles = [
 ---
 
 <Layout title="하자(Haja) 언어" customMaxWidth="max-w-5xl">
-  <section class="pt-16 pb-20 grid gap-14 md:grid-cols-[1.1fr_1fr] md:items-center">
+  <section class="pt-16 pb-24 grid gap-14 md:grid-cols-[1.1fr_1fr] md:items-center">
     <div>
       <p class="font-mono text-xs tracking-[0.25em] text-ink-faint uppercase mb-8">한국어 프로그래밍 언어</p>
-      <h1 class="font-serif font-bold text-5xl sm:text-6xl leading-[1.25] tracking-tight">
-        우리말로<br />코딩,<br /><span class="text-seal">하자.</span>
+      <h1 class="font-display font-extrabold text-5xl sm:text-7xl leading-[1.15]" style="letter-spacing:-0.045em">
+        우리말로<br />코딩,<br /><span class="text-gradient">하자.</span>
       </h1>
-      <p class="mt-10 text-lg text-ink-soft leading-relaxed max-w-md">
+      <p class="mt-9 text-lg text-ink-soft leading-relaxed max-w-md">
         조사와 서술어로 이어지는 우리말 어순 그대로, 프로그램을 써요.
       </p>
       <div class="flex flex-wrap items-center gap-x-8 gap-y-4 mt-10">
-        <a href="/docs/intro" class="bg-seal text-paper px-7 py-3 font-semibold hover:bg-seal-deep transition-colors" style="border-radius:2px">
+        <a href="/docs/intro" class="bg-ink text-white px-7 py-3.5 font-semibold rounded-xl hover:bg-verb transition-colors">
           시작하기
         </a>
-        <a href="/playground" class="font-semibold border-b-2 border-ink pb-0.5 hover:text-seal hover:border-seal transition-colors">
+        <a href="/playground" class="font-semibold text-ink hover:text-verb transition-colors">
           놀이터에서 바로 써보기 →
         </a>
       </div>
     </div>
 
-    <figure class="border border-rule bg-paper-deep/60 p-7 sm:p-9" style="border-radius:2px" aria-label="하자 코드 예시">
+    <figure class="border border-rule rounded-2xl p-7 sm:p-9" aria-label="하자 코드 예시">
       <pre class="font-mono text-[15px] sm:text-base leading-[2.1] whitespace-pre overflow-x-auto"><code><span class="text-ink-faint">(참고) 인사하는 프로그램</span>
-<span class="text-ink">'이름'</span><span class="text-seal">을</span> "세상"<span class="text-seal">으로</span> <span class="text-seal font-bold">정하자</span>
-<span class="text-ink">'이름'</span><span class="text-seal">을</span> <span class="text-seal font-bold">출력하자</span></code></pre>
-      <figcaption class="mt-6 pt-5 border-t border-rule text-sm text-ink-soft leading-relaxed">
-        <span class="text-seal font-semibold">주홍</span>으로 표시한 조사와 서술어가 문장의 뼈대예요.
-        무엇을, 어떻게, 그리고 <span class="font-semibold text-ink">-하자</span>.
+<span class="text-ink">'이름'</span><span class="text-particle">을</span> "세상"<span class="text-particle">으로</span> <span class="text-verb font-bold">정하자</span>
+<span class="text-ink">'이름'</span><span class="text-particle">을</span> <span class="text-verb font-bold">출력하자</span></code></pre>
+      <figcaption class="mt-6 pt-5 border-t border-rule flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-soft">
+        <span class="inline-flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-particle"></i>조사</span>
+        <span class="inline-flex items-center gap-2"><i class="w-2 h-2 rounded-full bg-verb"></i>서술어</span>
+        <span class="text-ink-faint">무엇을, 어떻게, 그리고 -하자.</span>
       </figcaption>
     </figure>
   </section>
@@ -43,8 +44,8 @@ const principles = [
     <ol class="grid md:grid-cols-3">
       {principles.map((p, i) => (
         <li class={`py-10 md:px-8 ${i === 0 ? 'md:pl-0' : 'md:border-l border-rule'} ${i < principles.length - 1 ? 'border-b md:border-b-0 border-rule' : ''}`}>
-          <p class="font-mono text-xs text-seal mb-4">{p.no}</p>
-          <h2 class="font-serif font-bold text-xl mb-3 leading-snug">{p.title}</h2>
+          <p class="font-mono text-xs text-verb mb-4">{p.no}</p>
+          <h2 class="font-display font-bold text-xl mb-3 leading-snug" style="letter-spacing:-0.02em">{p.title}</h2>
           <p class="text-ink-soft leading-relaxed">{p.body}</p>
         </li>
       ))}

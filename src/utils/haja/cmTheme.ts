@@ -1,28 +1,30 @@
-// The Haja editor look: warm paper, ink text, and the seal red reserved for the
-// sentence skeleton (verbs like 정하자/출력하자 and the particles 을/를/으로).
+// The Haja editor look: white paper and ink text, with the logo's purple for verbs
+// (정하자/출력하자) and its orange for particles (을/를/으로).
 // Shared by every CodeMirror instance (docs examples, side drawer, playground).
 import { EditorView } from "codemirror";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 
-const ink = "#1b1a17";
-const inkSoft = "#57534b";
-const inkFaint = "#8f897d";
-const rule = "#d8d1c2";
-const seal = "#c8371b";
-const sealDeep = "#a52b12";
-const moss = "#5a6b3f"; // strings
-const indigo = "#3d4b66"; // types
-const umber = "#7c4a2d"; // function names
+const ink = "#13131a";
+const inkSoft = "#4b4b57";
+const inkFaint = "#8b8b99";
+const rule = "#e8e8ee";
+const wash = "#f6f6f9";
+const verb = "#8e2de2"; // 서술어 (-하자)
+const particle = "#e8431f"; // 조사 (을/를/으로)
+const green = "#0e7c66"; // strings
+const indigo = "#4c5bd4"; // types
+const magenta = "#b0189e"; // function names
+const coral = "#c2410c"; // numbers, booleans
 
 const highlight = HighlightStyle.define([
-  { tag: t.keyword, color: seal, fontWeight: "700" },
-  { tag: t.meta, color: seal }, // particles
-  { tag: t.string, color: moss },
-  { tag: t.number, color: sealDeep },
-  { tag: t.bool, color: sealDeep, fontWeight: "700" },
+  { tag: t.keyword, color: verb, fontWeight: "700" },
+  { tag: t.meta, color: particle }, // particles
+  { tag: t.string, color: green },
+  { tag: t.number, color: coral },
+  { tag: t.bool, color: coral, fontWeight: "700" },
   { tag: t.typeName, color: indigo },
-  { tag: t.propertyName, color: umber },
+  { tag: t.propertyName, color: magenta },
   { tag: t.variableName, color: ink },
   { tag: t.comment, color: inkFaint, fontStyle: "italic" },
   { tag: t.operator, color: inkSoft },
@@ -37,7 +39,7 @@ export function hajaTheme(opts: { height?: string; maxHeight?: string; fontSize?
         maxHeight: opts.maxHeight,
         fontSize: opts.fontSize ?? "14.5px",
         color: ink,
-        backgroundColor: "#fbf9f4",
+        backgroundColor: "#ffffff",
       },
       "&.cm-focused": { outline: "none" },
       ".cm-scroller": {
@@ -45,14 +47,14 @@ export function hajaTheme(opts: { height?: string; maxHeight?: string; fontSize?
         lineHeight: "1.85",
         overflow: "auto",
       },
-      ".cm-content": { caretColor: seal, padding: "0.75rem 0" },
-      ".cm-cursor": { borderLeftColor: seal, borderLeftWidth: "2px" },
-      ".cm-gutters": { backgroundColor: "#f3efe5", borderRight: `1px solid ${rule}`, color: inkFaint },
-      ".cm-activeLine": { backgroundColor: "#f3efe5" },
-      ".cm-activeLineGutter": { backgroundColor: "#ece7db", color: ink },
-      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "#f3dcd4" },
-      ".cm-tooltip": { border: `1px solid ${rule}`, backgroundColor: "#fbf9f4", borderRadius: "2px" },
-      ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: seal, color: "#f6f3ec" },
+      ".cm-content": { caretColor: verb, padding: "0.75rem 0" },
+      ".cm-cursor": { borderLeftColor: verb, borderLeftWidth: "2px" },
+      ".cm-gutters": { backgroundColor: wash, borderRight: `1px solid ${rule}`, color: inkFaint },
+      ".cm-activeLine": { backgroundColor: wash },
+      ".cm-activeLineGutter": { backgroundColor: "#ececf2", color: ink },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "#f1e6fc" },
+      ".cm-tooltip": { border: `1px solid ${rule}`, backgroundColor: "#ffffff", borderRadius: "2px" },
+      ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: verb, color: "#ffffff" },
     }),
     syntaxHighlighting(highlight),
   ];

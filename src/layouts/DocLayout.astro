@@ -51,7 +51,7 @@ const navItems = [
       <nav class="md:sticky md:top-10 md:max-h-[calc(100vh-5rem)] md:overflow-y-auto space-y-9 md:pr-2" aria-label="문서 목차">
         {navItems.map((section) => (
           <div>
-            <h4 class="font-serif font-bold text-ink mb-3 text-[15px]">{section.title}</h4>
+            <h4 class="font-display font-bold text-ink mb-3 text-[15px]">{section.title}</h4>
             <ul class="border-l border-rule">
               {section.links.map((link) => {
                 const isActive = Astro.url.pathname === link.href || Astro.url.pathname === link.href + '/';
@@ -60,7 +60,7 @@ const navItems = [
                     <a
                       href={link.href}
                       aria-current={isActive ? 'page' : undefined}
-                      class={`block text-sm py-1.5 pl-4 -ml-px border-l-2 transition-colors ${isActive ? 'border-seal text-ink font-semibold' : 'border-transparent text-ink-soft hover:text-ink hover:border-ink-faint'}`}
+                      class={`block text-sm py-1.5 pl-4 -ml-px border-l-2 transition-colors ${isActive ? 'border-verb text-ink font-semibold' : 'border-transparent text-ink-soft hover:text-ink hover:border-ink-faint'}`}
                     >
                       {link.text}
                     </a>
@@ -79,13 +79,13 @@ const navItems = [
 
     <article class="prose max-w-none flex-grow min-w-0 pb-24 doc-article">
       <h1 class="!mt-0">{frontmatter.title}</h1>
-      <p class="font-serif text-xl text-ink-soft !mb-12 !mt-0 leading-relaxed border-b border-rule pb-10">{frontmatter.description}</p>
+      <p class="text-xl text-ink-soft !mb-12 !mt-0 leading-relaxed border-b border-rule pb-10">{frontmatter.description}</p>
       <slot />
     </article>
   </div>
 
   <!-- Side Playground Overlay -->
-  <div id="side-playground-drawer" class="fixed top-0 right-0 w-0 h-full bg-paper border-l border-ink z-40 transition-all duration-300 flex flex-col overflow-hidden">
+  <div id="side-playground-drawer" class="fixed top-0 right-0 w-0 h-full bg-white border-l border-rule z-40 transition-all duration-300 flex flex-col overflow-hidden">
     <div class="hj-panel-head shrink-0 !py-2.5" style="border-radius:0">
       <span class="hj-tag font-semibold text-ink">놀이터</span>
       <div class="flex gap-2">

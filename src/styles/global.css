@@ -2,35 +2,40 @@
 
 /*
   하자 디자인 토큰.
-  종이(한지 결의 따뜻한 흰색) + 먹 + 주홍 한 가지. 색은 이 셋만 쓰고,
-  주홍은 낙관(도장)처럼 "여기가 핵심"인 곳에만 찍는다.
+  순백 바탕 + 로고의 먹색(#13131A). 색은 로고의 그라데이션(보라 → 마젠타 → 주황)에서
+  뽑은 두 가지만 쓴다: 서술어(-하자)는 보라, 조사(을/를/으로)는 주황.
+  그라데이션 자체는 로고, 제목의 "하자.", 가는 표지선에만 쓴다.
 */
 @theme {
-  --color-paper: #f6f3ec;
-  --color-paper-deep: #ece7db;
-  --color-ink: #1b1a17;
-  --color-ink-soft: #57534b;
-  --color-ink-faint: #8f897d;
-  --color-rule: #d8d1c2;
-  --color-seal: #c8371b;
-  --color-seal-deep: #a52b12;
-  --color-seal-wash: #f3dcd4;
+  --color-ink: #13131a;
+  --color-ink-soft: #4b4b57;
+  --color-ink-faint: #8b8b99;
+  --color-rule: #e8e8ee;
+  --color-wash: #f6f6f9;
+  --color-verb: #8e2de2;
+  --color-verb-deep: #7420be;
+  --color-verb-wash: #f1e6fc;
+  --color-particle: #e8431f;
 
-  --font-serif: "Noto Serif KR", "Nanum Myeongjo", serif;
+  --font-display: "Pretendard", system-ui, sans-serif;
   --font-sans: "Pretendard", system-ui, sans-serif;
   --font-mono: "D2Coding", "D2Coding ligature", ui-monospace, "Cascadia Mono", monospace;
 }
 
+:root {
+  --gradient-haja: linear-gradient(115deg, #8e2de2 0%, #f000ff 55%, #ff5e3a 100%);
+}
+
 @layer base {
   html {
-    background: var(--color-paper);
+    background: #fff;
   }
   body {
     /* 한글은 어절 단위로 줄을 바꾼다("프로/그램" 처럼 단어가 끊기지 않게). */
     word-break: keep-all;
     font-family: var(--font-sans);
     color: var(--color-ink);
-    background: var(--color-paper);
+    background: #fff;
   }
   pre, code, textarea, .cm-editor {
     word-break: normal;
@@ -40,11 +45,11 @@
     scrollbar-color: var(--color-rule) transparent;
   }
   ::selection {
-    background: var(--color-seal);
-    color: var(--color-paper);
+    background: var(--color-verb);
+    color: #fff;
   }
   :focus-visible {
-    outline: 2px solid var(--color-seal);
+    outline: 2px solid var(--color-verb);
     outline-offset: 2px;
   }
 
@@ -53,25 +58,26 @@
     line-height: 1.85;
   }
   .prose h1 {
-    font-family: var(--font-serif);
-    @apply text-4xl font-bold mb-6 mt-10 tracking-tight leading-snug;
+    @apply text-4xl font-extrabold mb-6 mt-10 leading-tight;
+    letter-spacing: -0.03em;
   }
   .prose h2 {
-    font-family: var(--font-serif);
-    @apply text-2xl font-bold mb-5 mt-16 tracking-tight leading-snug flex items-baseline gap-3;
+    @apply text-2xl font-bold mb-5 mt-16 leading-snug flex items-baseline gap-3;
+    letter-spacing: -0.02em;
   }
-  /* 소제목 앞의 작은 주홍 획: 문서를 읽어 내려가는 눈의 표지. */
+  /* 소제목 앞의 작은 그라데이션 획: 문서를 읽어 내려가는 눈의 표지. */
   .prose h2::before {
     content: "";
     flex: none;
-    width: 0.9rem;
-    height: 3px;
-    background: var(--color-seal);
+    width: 1rem;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--gradient-haja);
     transform: translateY(-0.28em);
   }
   .prose h3 {
-    font-family: var(--font-serif);
     @apply text-lg font-bold mb-3 mt-10;
+    letter-spacing: -0.01em;
   }
   .prose p {
     @apply mb-6;
@@ -86,7 +92,7 @@
     color: var(--color-ink-soft);
   }
   .prose ul li::marker {
-    color: var(--color-seal);
+    color: var(--color-verb);
   }
   .prose ol {
     @apply list-decimal list-outside ml-6 mb-6 flex flex-col gap-2;
@@ -99,23 +105,21 @@
   .prose pre {
     font-family: var(--font-mono);
     background: var(--color-ink);
-    color: var(--color-paper);
-    @apply p-5 text-sm mb-6 overflow-x-auto;
-    border-radius: 2px;
+    color: #f1f1f5;
+    @apply p-5 text-sm mb-6 overflow-x-auto rounded-lg;
   }
   .prose code {
     font-family: var(--font-mono);
-    background: var(--color-paper-deep);
+    background: var(--color-wash);
     color: var(--color-ink);
-    @apply px-1.5 py-0.5 text-[0.88em];
-    border-radius: 2px;
+    @apply px-1.5 py-0.5 text-[0.88em] rounded;
   }
   .prose pre code {
     @apply bg-transparent text-inherit p-0;
   }
   .prose blockquote {
     @apply pl-5 mb-6;
-    border-left: 3px solid var(--color-seal);
+    border-left: 3px solid var(--color-verb);
     color: var(--color-ink-soft);
   }
   .prose hr {
@@ -123,15 +127,15 @@
     @apply my-12;
   }
   .prose a {
-    color: var(--color-seal-deep);
+    color: var(--color-verb-deep);
     text-decoration: underline;
-    text-decoration-color: var(--color-seal-wash);
+    text-decoration-color: #d9bdf5;
     text-decoration-thickness: 2px;
     text-underline-offset: 4px;
     transition: text-decoration-color 0.15s;
   }
   .prose a:hover {
-    text-decoration-color: var(--color-seal);
+    text-decoration-color: var(--color-verb);
   }
   .prose table {
     @apply w-full mb-8 text-sm border-collapse;
@@ -147,24 +151,31 @@
   }
 }
 
-/* 예제·놀이터 패널: 편집기(종이) + 결과(먹) 한 쌍. */
 @layer components {
+  .text-gradient {
+    background: var(--gradient-haja);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* 예제·놀이터 패널: 편집기(흰색) + 결과(로고의 먹색) 한 쌍. */
   .hj-panel {
     display: flex;
     flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--color-rule);
-    background: #fbf9f4;
-    border-radius: 2px;
+    background: #fff;
+    border-radius: 10px;
   }
   .hj-panel-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 0.45rem 0.9rem;
+    padding: 0.5rem 0.9rem;
     border-bottom: 1px solid var(--color-rule);
-    background: var(--color-paper-deep);
+    background: var(--color-wash);
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--color-ink-soft);
@@ -176,36 +187,38 @@
   }
   .hj-tag::before {
     content: "";
-    width: 0.4rem;
-    height: 0.4rem;
-    background: var(--color-seal);
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: var(--gradient-haja);
   }
   .hj-run {
     font-family: var(--font-sans);
     font-size: 0.75rem;
     font-weight: 600;
     line-height: 1;
-    padding: 0.4rem 0.85rem;
-    border: 1px solid var(--color-ink);
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--color-rule);
+    background: #fff;
     color: var(--color-ink);
-    border-radius: 2px;
+    border-radius: 8px;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
   .hj-run:hover {
-    background: var(--color-seal);
-    border-color: var(--color-seal);
-    color: var(--color-paper);
+    border-color: var(--color-ink);
   }
   .hj-run.solid {
     background: var(--color-ink);
-    color: var(--color-paper);
+    border-color: var(--color-ink);
+    color: #fff;
   }
   .hj-run.solid:hover {
-    background: var(--color-seal);
+    background: var(--color-verb);
+    border-color: var(--color-verb);
   }
   .hj-out {
     background: var(--color-ink);
-    color: #e9e4d8;
+    color: #ececf2;
     font-family: var(--font-mono);
     line-height: 1.8;
   }
@@ -213,30 +226,31 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.9rem;
-    border-bottom: 1px solid #34322c;
+    padding: 0.4rem 0.9rem;
+    border-bottom: 1px solid #2a2a35;
     font-family: var(--font-mono);
     font-size: 0.75rem;
-    color: #9d9686;
+    color: #8b8b99;
   }
   .hj-out-head::before {
     content: "";
-    width: 0.4rem;
-    height: 0.4rem;
-    background: #9d9686;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: #8b8b99;
   }
   .hj-prompt {
-    color: #e8866f;
+    color: #ff8a6b;
   }
   .hj-input {
     width: 16rem;
     background: transparent;
     outline: none;
     color: inherit;
-    border-bottom: 1px solid #e8866f80;
+    border-bottom: 1px solid #ff8a6b80;
     transition: border-color 0.15s;
   }
   .hj-input:focus {
-    border-bottom-color: #e8866f;
+    border-bottom-color: #ff8a6b;
   }
 }
