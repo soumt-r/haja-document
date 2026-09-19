@@ -38,3 +38,7 @@ Consult these guides before working on related tasks:
 로 두 저장소 파일을 함께 다시 만드세요 (`-check`를 앞에 붙이면 오래됐는지만 확인).
 엔진에서 에러를 던질 때는 `throw new RuntimeError(Codes.X, ...)`(`errs.ts`)를 쓰고 한국어/영어 리터럴을 직접 쓰지 마세요.
 `compare_tests.ts`는 Go 엔진과 출력뿐 아니라 최종 에러 문구도 비교합니다.
+
+`src/utils/haja/stdNames.ts`도 `../hana`(Go)의 `std` 이름표에서 **생성되는 파일**입니다. 직접 고치지 말고 `hana/std`를 고친 뒤
+`cd ../hana && go run ./cmd/stdgen -haja ../haja-docs/src/utils/haja/stdNames.ts -kanade ../kanade-docs/src/utils/kanade/stdNames.ts`
+로 다시 만드세요(`-check` 옵션으로 최신 여부 확인). 새 네이티브 함수의 동작은 `stdlib.ts`의 `nativeImpls`에 ID로 구현합니다.

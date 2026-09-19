@@ -36,7 +36,7 @@ export function hajaTheme(opts: { height?: string; maxHeight?: string; fontSize?
     EditorView.theme({
       "&": {
         height: opts.height ?? "auto",
-        maxHeight: opts.maxHeight,
+        ...(opts.maxHeight ? { maxHeight: opts.maxHeight } : {}),
         fontSize: opts.fontSize ?? "14.5px",
         color: ink,
         backgroundColor: "#ffffff",

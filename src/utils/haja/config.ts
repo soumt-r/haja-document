@@ -10,9 +10,6 @@ export interface LangConfig {
   builtinToNumber: string;
   builtinToCode: string;
   builtinToText: string;
-  pkgMath: string;
-  mathCeil: string;
-  mathFloor: string;
   nativePrefix: string;
   defaultItemName: string;
   defaultIndexName: string;
@@ -81,9 +78,6 @@ export const KoreanConfig: LangConfig = {
   builtinToNumber: "숫자로",
   builtinToCode: "코드로",
   builtinToText: "글자로",
-  pkgMath: "수학",
-  mathCeil: "올림",
-  mathFloor: "버림",
   nativePrefix: "네이티브_",
   defaultItemName: "아이템",
   defaultIndexName: "인덱스",
