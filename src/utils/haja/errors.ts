@@ -23,6 +23,15 @@ export class HajaError extends Error {
   }
 }
 
+// The parser found syntax problems; message is the finished, localized report
+// (index.ts throws it as-is, without an engine-bug prefix).
+export class HajaSyntaxReport extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HajaSyntaxReport";
+  }
+}
+
 export class HajaRuntimeError extends Error {
   line: number | string;
   hajaObj?: unknown;

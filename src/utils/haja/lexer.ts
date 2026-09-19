@@ -6,7 +6,6 @@
 // depends on that exact shape (`new Lexer(doc).tokens`).
 import * as tok from "./token";
 import type { Token, TokenType } from "./token";
-import { HajaError } from "./errors";
 
 interface Spec {
   kind: TokenType | "SPACE";
@@ -120,15 +119,16 @@ export class Lexer {
 
       if (currentIndent > indents[indents.length - 1]) {
         indents.push(currentIndent);
-        this.tokens.push({ type: tok.INDENT, literal: "", line: lineNum });
+        this.tokens.push({ type: tok.INDENT, literal: "", line: lineNum, col: 0 });
       } else if (currentIndent < indents[indents.length - 1]) {
         while (currentIndent < indents[indents.length - 1]) {
           indents.pop();
-          this.tokens.push({ type: tok.DEDENT, literal: "", line: lineNum });
+          this.tokens.push({ type: tok.DEDENT, literal: "", line: lineNum, col: 0 });
         }
       }
 
       let remaining = rawLine.trim();
+      let col = currentIndent;
 
       while (remaining.length > 0) {
         let matched = false;
@@ -137,18 +137,21 @@ export class Lexer {
           if (m && m.index === 0) {
             const val = m[0];
             if (spec.kind !== "SPACE") {
-              this.tokens.push({ type: spec.kind, literal: val, line: lineNum });
+              this.tokens.push({ type: spec.kind, literal: val, line: lineNum, col });
             }
             remaining = remaining.slice(val.length);
+            col += val.length;
             matched = true;
             break;
           }
         }
         if (!matched) {
-          // MISMATCH: 알 수 없는 한 글자 — 예전 TS 엔진은 이 지점에서 HajaError를
-          // 던졌다(Go는 그냥 한 글자를 건너뛴다). Playground에는 "왜 멈췄는지"가
-          // Go의 침묵보다 사용자에게 더 유용해서 이 동작을 유지한다.
-          throw new HajaError(`알 수 없는 문자예요: '${remaining[0]}'`, lineNum);
+          // No rule accepts this character: keep it as an ILLEGAL token so the
+          // parser reports it (same as hana's lexers).
+          const ch = String.fromCodePoint(remaining.codePointAt(0)!);
+          this.tokens.push({ type: tok.ILLEGAL, literal: ch, line: lineNum, col });
+          remaining = remaining.slice(ch.length);
+          col += ch.length;
         }
       }
       lineNum++;
@@ -156,8 +159,8 @@ export class Lexer {
 
     while (indents.length > 1) {
       indents.pop();
-      this.tokens.push({ type: tok.DEDENT, literal: "", line: lineNum });
+      this.tokens.push({ type: tok.DEDENT, literal: "", line: lineNum, col: 0 });
     }
-    this.tokens.push({ type: tok.EOF, literal: "", line: lineNum });
+    this.tokens.push({ type: tok.EOF, literal: "", line: lineNum, col: 0 });
   }
 }

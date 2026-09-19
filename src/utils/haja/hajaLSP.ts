@@ -1,9 +1,12 @@
 import { autocompletion } from "@codemirror/autocomplete";
 import type { CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { linter } from "@codemirror/lint";
+import type { EditorView } from "@codemirror/view";
 import type { Diagnostic } from "@codemirror/lint";
 import { Lexer } from "./lexer";
 import { Parser } from "./parser";
+import { KoreanConfig } from "./config";
+import { message, syntaxError } from "./errs";
 
 const keywords = [
   "이다", "아니다", "입력받자", "숨기자", "물려주자", "설계하자", "정하자", "고정하자",
@@ -116,7 +119,7 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
 
 export const hajaAutocomplete = autocompletion({ override: [hajaCompletions] });
 
-export const hajaLinter = linter(view => {
+export const hajaLintSource = (view: EditorView): Diagnostic[] => {
   let diagnostics: Diagnostic[] = [];
   const doc = view.state.doc.toString();
   
@@ -126,6 +129,21 @@ export const hajaLinter = linter(view => {
     const lexer = new Lexer(doc);
     const parser = new Parser(lexer.tokens);
     parser.parseProgram();
+    // The parser recovers from bad tokens, so it reports them as diagnostics
+    // (same wording as hana's LSP and CLI, from the shared error catalog).
+    for (const d of parser.diagnostics) {
+      const line = Math.min(Math.max(d.line, 1), view.state.doc.lines);
+      const info = view.state.doc.line(line);
+      // Running off the end (empty literal) has no token: mark the line's last character.
+      const from = d.literal === "" ? Math.max(info.to - 1, info.from) : Math.min(info.from + d.col, info.to);
+      const to = d.literal === "" ? info.to : Math.min(from + Math.max(d.literal.length, 1), info.to);
+      diagnostics.push({
+        from,
+        to: Math.max(to, from),
+        severity: "error",
+        message: message(KoreanConfig.locale, syntaxError(d)),
+      });
+    }
   } catch (err: any) {
     const msg = String(err);
     const match = msg.match(/(\d+)번째 줄(?:,\s*(\d+)번째 글자)?/);
@@ -157,4 +175,6 @@ export const hajaLinter = linter(view => {
   }
   
   return diagnostics;
-});
+};
+
+export const hajaLinter = linter(hajaLintSource);
