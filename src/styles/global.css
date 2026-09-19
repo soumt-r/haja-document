@@ -1,37 +1,242 @@
 @import "tailwindcss";
 
+/*
+  하자 디자인 토큰.
+  종이(한지 결의 따뜻한 흰색) + 먹 + 주홍 한 가지. 색은 이 셋만 쓰고,
+  주홍은 낙관(도장)처럼 "여기가 핵심"인 곳에만 찍는다.
+*/
+@theme {
+  --color-paper: #f6f3ec;
+  --color-paper-deep: #ece7db;
+  --color-ink: #1b1a17;
+  --color-ink-soft: #57534b;
+  --color-ink-faint: #8f897d;
+  --color-rule: #d8d1c2;
+  --color-seal: #c8371b;
+  --color-seal-deep: #a52b12;
+  --color-seal-wash: #f3dcd4;
+
+  --font-serif: "Noto Serif KR", "Nanum Myeongjo", serif;
+  --font-sans: "Pretendard", system-ui, sans-serif;
+  --font-mono: "D2Coding", "D2Coding ligature", ui-monospace, "Cascadia Mono", monospace;
+}
+
 @layer base {
+  html {
+    background: var(--color-paper);
+  }
+  body {
+    /* 한글은 어절 단위로 줄을 바꾼다("프로/그램" 처럼 단어가 끊기지 않게). */
+    word-break: keep-all;
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: var(--color-paper);
+  }
+  pre, code, textarea, .cm-editor {
+    word-break: normal;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-rule) transparent;
+  }
+  ::selection {
+    background: var(--color-seal);
+    color: var(--color-paper);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-seal);
+    outline-offset: 2px;
+  }
+
   .prose {
-    @apply text-zinc-800 leading-relaxed;
+    color: var(--color-ink);
+    line-height: 1.85;
   }
   .prose h1 {
-    @apply text-3xl font-bold mb-6 mt-10 tracking-tight;
+    font-family: var(--font-serif);
+    @apply text-4xl font-bold mb-6 mt-10 tracking-tight leading-snug;
   }
   .prose h2 {
-    @apply text-2xl font-bold mb-4 mt-12 pb-2 border-b border-zinc-200 tracking-tight;
+    font-family: var(--font-serif);
+    @apply text-2xl font-bold mb-5 mt-16 tracking-tight leading-snug flex items-baseline gap-3;
+  }
+  /* 소제목 앞의 작은 주홍 획: 문서를 읽어 내려가는 눈의 표지. */
+  .prose h2::before {
+    content: "";
+    flex: none;
+    width: 0.9rem;
+    height: 3px;
+    background: var(--color-seal);
+    transform: translateY(-0.28em);
   }
   .prose h3 {
-    @apply text-lg font-semibold mb-3 mt-8;
+    font-family: var(--font-serif);
+    @apply text-lg font-bold mb-3 mt-10;
   }
   .prose p {
-    @apply mb-6 leading-loose text-zinc-700;
+    @apply mb-6;
+    color: var(--color-ink-soft);
+  }
+  .prose strong {
+    color: var(--color-ink);
+    @apply font-semibold;
   }
   .prose ul {
-    @apply list-disc list-outside ml-6 mb-6 text-zinc-700 flex flex-col gap-2;
+    @apply list-disc list-outside ml-6 mb-6 flex flex-col gap-2;
+    color: var(--color-ink-soft);
+  }
+  .prose ul li::marker {
+    color: var(--color-seal);
+  }
+  .prose ol {
+    @apply list-decimal list-outside ml-6 mb-6 flex flex-col gap-2;
+    color: var(--color-ink-soft);
+  }
+  .prose ol li::marker {
+    color: var(--color-ink-faint);
+    font-family: var(--font-mono);
   }
   .prose pre {
-    @apply bg-zinc-900 text-zinc-100 p-5 rounded-xl text-sm mb-6 overflow-x-auto;
+    font-family: var(--font-mono);
+    background: var(--color-ink);
+    color: var(--color-paper);
+    @apply p-5 text-sm mb-6 overflow-x-auto;
+    border-radius: 2px;
   }
   .prose code {
-    @apply bg-zinc-100 text-zinc-900 px-1.5 py-0.5 rounded font-mono text-sm;
+    font-family: var(--font-mono);
+    background: var(--color-paper-deep);
+    color: var(--color-ink);
+    @apply px-1.5 py-0.5 text-[0.88em];
+    border-radius: 2px;
   }
   .prose pre code {
-    @apply bg-transparent text-inherit p-0 rounded-none;
+    @apply bg-transparent text-inherit p-0;
   }
   .prose blockquote {
-    @apply border-l-4 border-zinc-300 pl-4 italic text-zinc-600 mb-6;
+    @apply pl-5 mb-6;
+    border-left: 3px solid var(--color-seal);
+    color: var(--color-ink-soft);
+  }
+  .prose hr {
+    border-color: var(--color-rule);
+    @apply my-12;
   }
   .prose a {
-    @apply text-blue-600 hover:underline underline-offset-4 decoration-blue-300;
+    color: var(--color-seal-deep);
+    text-decoration: underline;
+    text-decoration-color: var(--color-seal-wash);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+    transition: text-decoration-color 0.15s;
+  }
+  .prose a:hover {
+    text-decoration-color: var(--color-seal);
+  }
+  .prose table {
+    @apply w-full mb-8 text-sm border-collapse;
+  }
+  .prose th {
+    @apply text-left font-semibold py-2 pr-4;
+    border-bottom: 2px solid var(--color-ink);
+  }
+  .prose td {
+    @apply py-2 pr-4;
+    border-bottom: 1px solid var(--color-rule);
+    color: var(--color-ink-soft);
+  }
+}
+
+/* 예제·놀이터 패널: 편집기(종이) + 결과(먹) 한 쌍. */
+@layer components {
+  .hj-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--color-rule);
+    background: #fbf9f4;
+    border-radius: 2px;
+  }
+  .hj-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0.9rem;
+    border-bottom: 1px solid var(--color-rule);
+    background: var(--color-paper-deep);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-ink-soft);
+  }
+  .hj-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .hj-tag::before {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    background: var(--color-seal);
+  }
+  .hj-run {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid var(--color-ink);
+    color: var(--color-ink);
+    border-radius: 2px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .hj-run:hover {
+    background: var(--color-seal);
+    border-color: var(--color-seal);
+    color: var(--color-paper);
+  }
+  .hj-run.solid {
+    background: var(--color-ink);
+    color: var(--color-paper);
+  }
+  .hj-run.solid:hover {
+    background: var(--color-seal);
+  }
+  .hj-out {
+    background: var(--color-ink);
+    color: #e9e4d8;
+    font-family: var(--font-mono);
+    line-height: 1.8;
+  }
+  .hj-out-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.9rem;
+    border-bottom: 1px solid #34322c;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: #9d9686;
+  }
+  .hj-out-head::before {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    background: #9d9686;
+  }
+  .hj-prompt {
+    color: #e8866f;
+  }
+  .hj-input {
+    width: 16rem;
+    background: transparent;
+    outline: none;
+    color: inherit;
+    border-bottom: 1px solid #e8866f80;
+    transition: border-color 0.15s;
+  }
+  .hj-input:focus {
+    border-bottom-color: #e8866f;
   }
 }

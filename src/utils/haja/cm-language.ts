@@ -23,7 +23,7 @@ const hajaParser: StreamParser<unknown> = {
     if (stream.match(operatorRegex)) return "operator";
 
     const particles = /^(은|는|이|가|을|를|와|과|로|으로|의|에|에게|에서)/;
-    if (stream.match(particles)) return "propertyName"; 
+    if (stream.match(particles)) return "meta";
 
     const booleanNull = /^(참|거짓|비어있음)/;
     if (stream.match(booleanNull)) return "bool";
