@@ -4,6 +4,7 @@
 // one repo, per the "구조만 미러링, 레포는 분리" decision.
 import type { Expression } from "./ast";
 import type { Locale } from "./errs";
+import type { TypeNames } from "./typecheck";
 
 export interface LangConfig {
   builtinToString: string;
@@ -55,6 +56,9 @@ export interface LangConfig {
   // Playground's error output). Mirrors vm.LangConfig.Locale.
   locale: Locale;
 
+  // The names of the built-in types (declared-type checks and 입력받자 use them).
+  types: TypeNames;
+
   // parseEmbeddedExpr lexes+parses a `{...}` template-string interpolation's
   // inner code with this language's full grammar. Left undefined for a repo
   // whose evalExpr.ts hardcodes its own Lexer/Parser instead (see this
@@ -100,6 +104,7 @@ export const KoreanConfig: LangConfig = {
   stringContainsMethod: "포함확인",
   equalsMethodName: "기호 같다",
   locale: "ko",
+  types: { number: "숫자", string: "문자열", boolean: "논리", any: "아무거나", list: "목록", dict: "사전", null: "비어있음" },
 };
 
 // Bounds nested calls so runaway recursion becomes a catchable RecursionError,
