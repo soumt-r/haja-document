@@ -16,7 +16,7 @@ const SPECS: Spec[] = [
   { kind: tok.STRING, regex: /^"(?:\\[\s\S]|[^"\\])*"/ },
   { kind: tok.VAR, regex: /^'[가-힣a-zA-Z0-9_]+'/ },
   { kind: tok.FUNCTION, regex: /^<[^>]+>/ },
-  { kind: tok.TYPE, regex: /^\[(?:\([^)]+\))?[가-힣a-zA-Z_][가-힣a-zA-Z0-9_]*\]/ },
+  { kind: tok.TYPE, regex: /^\[(?:\([^)]+\))?(?:[가-힣a-zA-Z_][가-힣a-zA-Z0-9_]*|[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[A-Za-z0-9][A-Za-z0-9._-]*){2,})\]/ },
   { kind: tok.LBRACKET, regex: /^\[/ },
   { kind: tok.RBRACKET, regex: /^\]/ },
   { kind: tok.LPAREN, regex: /^\(/ },
