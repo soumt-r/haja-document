@@ -87,7 +87,7 @@ description: 하자(Haja) 언어의 실행기(Interpreter) 동작 방식과 런�
 
 ### 4.1 스위치문 관통 (Fallthrough) 및 기본(Default) 검증
 - 스위치 분기 내에서 `FallthroughStatement`(`다음으로 이어가자`)를 만나면, break 깃발을 무시하고 소스코드 상 바로 밑에 선언된 다음 `case` 블록을 조건(테스트) 평가 없이 즉시 연속해서 실행해야 해요.
-- **관통 및 누락 검증 (Unhandled Switch)**: 마지막 `case` 블록에서 `다음으로 이어가자`를 호출하거나, 애초에 들어온 값이 일치하는 `case`가 전혀 없을 때, 런타임은 `default`(`나머지는:`) 블록을 찾아 실행해야 한답니다. 만약 `default` 블록이 존재하지 않는다면, 조용히 넘어가서는 안 되며 즉시 `UnhandledSwitchCaseError`를 던져 모든 스위치 분기가 안전하게 처리되도록 강제해 주셔야 해요.
+- **일치하는 `case`가 없을 때 (Default)**: 들어온 값과 일치하는 `case`가 전혀 없으면, 런타임은 `default`(`나머지는:`) 블록이 있을 경우 그 블록을 실행해요. `default` 블록이 없으면 아무것도 실행하지 않고 다음 문장으로 넘어가요(오류가 아니에요).
 
 ### 4.2 예외 처리 (Exception / Try-Catch-Finally)
 - 런타임은 예외가 발생하면 콜스택을 즉시 풀기(Unwinding) 시작해야 해요.
