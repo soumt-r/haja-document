@@ -99,6 +99,13 @@ export const stdModules: readonly StdModule[] = [
       { id: "list.flatten", name: "평탄화" },
       { id: "list.chunk", name: "조각내기" },
       { id: "list.zip", name: "짝짓기" },
+      { id: "list.map", name: "변환하기" },
+      { id: "list.filter", name: "걸러내기" },
+      { id: "list.reduce", name: "접기" },
+      { id: "list.find", name: "찾기" },
+      { id: "list.any", name: "하나라도" },
+      { id: "list.all", name: "모두" },
+      { id: "list.sortby", name: "기준정렬" },
     ],
   },
   {

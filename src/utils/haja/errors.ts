@@ -64,13 +64,26 @@ export class BreakSignal extends Error {
   }
 }
 
+// What an uncaught thrown value reads as: an error object shows its message, like
+// hana's ThrownError.Error(); anything else its plain text.
+function describeThrown(value: unknown): string {
+  if (typeof value === "string") return value;
+  const props = (value as { props?: Record<string, unknown> } | null)?.props;
+  if (props) {
+    for (const key of ["메시지", "メッセージ"]) {
+      if (typeof props[key] === "string") return props[key] as string;
+    }
+  }
+  return String(value);
+}
+
 // ThrownSignal carries a 하자-level thrown value (an ThownError-equivalent) —
 // distinct from HajaRuntimeError, which is an *engine*-raised error (TypeError,
 // IndexOutOfBoundsError, ...) not a user `던지자`.
 export class ThrownSignal extends Error {
   value: unknown;
   constructor(value: unknown) {
-    super(typeof value === "string" ? value : String(value));
+    super(describeThrown(value));
     this.name = "ThrownSignal";
     this.value = value;
   }
