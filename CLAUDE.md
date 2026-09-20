@@ -48,3 +48,7 @@ Consult these guides before working on related tasks:
 `src/utils/haja/lspKeywords.ts`도 `hana/lsp`의 키워드 표에서 **생성되는 파일**입니다(`hajaLSP.ts`의 자동완성이 씀). 직접 고치지 말고 `cd ../hana && go run ./cmd/lspgen -haja ../haja-docs/src/utils/haja/lspKeywords.ts -kanade ../kanade-docs/src/utils/kanade/lspKeywords.ts`로 다시 만드세요(`-check`로 최신 여부 확인).
 
 선언한 타입 검사(`typecheck.ts`, `types.ts`)는 Go의 `typecheck`/`vm/types.go`와 같은 규칙을 손으로 미러링한 것입니다. 규칙을 바꾸면 Go를 먼저 고치고 여기를 맞추세요. `compare_tests.ts`의 '타입:' 케이스가 문구까지 비교합니다.
+
+## 문서 코드 블록
+
+튜토리얼의 코드 블록은 ` ```haja `(브라우저에서 실행할 수 없는 예제는 ` ```haja fail `)만 쓰세요. ` ```text `처럼 다른 언어 이름을 쓰면 사이트가 코드 블록으로 꾸미지 않아 어두운 배경에 글자가 안 보입니다(13장에서 실제로 겪음). `fail` 블록은 doctest가 "에러가 나야 통과"로 검사합니다.
