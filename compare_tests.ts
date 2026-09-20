@@ -12,7 +12,7 @@ const DOCS_DIR = './src/pages/docs';
 
 // 난수와 현재 시각을 쓰는 예제는 실행마다 결과가 달라서, 에러 없이 끝나는지만 본다.
 // [파일] 같은 NativeOnly 모듈을 쓰는 예제는 브라우저 엔진이 전용 에러로 거절하는 게 맞다.
-const NATIVE_ONLY = /\[파일\]/;
+const NATIVE_ONLY = /\[파일\]|\[소켓\]|\[HTTP\]/;
 
 const NONDETERMINISTIC = /\[무작위\]|<지금>/;
 const GO_EXECUTABLE = '..\\hana\\hana.exe';
@@ -22,7 +22,7 @@ function extractHajaBlocks(markdown: string): string[] {
     const regex = /```haja([^\n]*)\n([\s\S]*?)```/g;
     let match;
     while ((match = regex.exec(markdown)) !== null) {
-        blocks.push(match[2]);
+        if (!match[1].includes('skip')) blocks.push(match[2]); // `skip`: an example that needs a peer, only shown
     }
     return blocks;
 }
@@ -60,7 +60,7 @@ function runGoEngine(code: string, stdin = ''): string {
     writeFileSync(tempFile, code);
 
     try {
-        const result = execSync(`${GO_EXECUTABLE} run ${tempFile}`, { input: stdin, stdio: ['pipe', 'pipe', 'pipe'] });
+        const result = execSync(`${GO_EXECUTABLE} run ${tempFile}`, { input: stdin, stdio: ['pipe', 'pipe', 'pipe'], timeout: 60000 });
         unlinkSync(tempFile);
         return result.toString().trim();
     } catch (e: any) {
@@ -86,6 +86,8 @@ async function walk(dir: string, callback: (path: string) => Promise<void>) {
 
 const BROWSER_ONLY_CASES: { name: string; code: string; wantError: string }[] = [
     { name: "파일 모듈은 브라우저에서 못 씀", code: "[파일]에서 <읽기>를 가져오자\n<읽기>(\"a.txt\")를 출력하자", wantError: "브라우저에서 사용할 수 없어요" },
+    { name: "표준: 소켓은 브라우저에서 쓸 수 없어요", code: "[소켓]에서 <연결하기>를 가져오자\n<연결하기>(\"127.0.0.1\", 80)를 출력하자\n", wantError: "브라우저에서 사용할 수 없어요" },
+    { name: "표준: HTTP는 브라우저에서 쓸 수 없어요", code: "[HTTP]에서 <가져오기>를 가져오자\n<가져오기>(\"http://127.0.0.1/\")를 출력하자\n", wantError: "브라우저에서 사용할 수 없어요" },
 ];
 
 // 문서 예제에는 없지만 두 엔진이 같아야 하는 동작: 표준 라이브러리(std) 임포트.

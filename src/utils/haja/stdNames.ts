@@ -143,6 +143,32 @@ export const stdModules: readonly StdModule[] = [
     ],
   },
   {
+    id: "socket",
+    name: "소켓",
+    nativeOnly: true,
+    functions: [
+      { id: "socket.connect", name: "연결하기" },
+      { id: "socket.listen", name: "듣기" },
+      { id: "socket.accept", name: "받아들이기" },
+      { id: "socket.send", name: "보내기" },
+      { id: "socket.receive", name: "받기" },
+      { id: "socket.receiveline", name: "줄받기" },
+      { id: "socket.timeout", name: "시간제한" },
+      { id: "socket.address", name: "주소" },
+      { id: "socket.close", name: "닫기" },
+    ],
+  },
+  {
+    id: "http",
+    name: "HTTP",
+    nativeOnly: true,
+    functions: [
+      { id: "http.get", name: "가져오기" },
+      { id: "http.post", name: "보내기" },
+      { id: "http.request", name: "요청" },
+    ],
+  },
+  {
     id: "path",
     name: "경로",
     functions: [
