@@ -136,6 +136,21 @@ export const stdModules: readonly StdModule[] = [
     ],
   },
   {
+    id: "path",
+    name: "경로",
+    functions: [
+      { id: "path.join", name: "합치기" },
+      { id: "path.dirname", name: "폴더이름" },
+      { id: "path.basename", name: "파일이름" },
+      { id: "path.ext", name: "확장자" },
+      { id: "path.stem", name: "확장자뺀이름" },
+      { id: "path.withext", name: "확장자바꾸기" },
+      { id: "path.normalize", name: "정리하기" },
+      { id: "path.isabs", name: "절대경로인지" },
+      { id: "path.parts", name: "부분나누기" },
+    ],
+  },
+  {
     id: "regex",
     name: "정규식",
     functions: [
