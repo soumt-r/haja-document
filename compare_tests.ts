@@ -15,7 +15,8 @@ const DOCS_DIR = './src/pages/docs';
 const NATIVE_ONLY = /\[파일\]|\[소켓\]|\[HTTP\]/;
 
 const NONDETERMINISTIC = /\[무작위\]|<지금>/;
-const GO_EXECUTABLE = '..\\hana\\hana.exe';
+// HANA_BIN overrides where the hana binary is; by default it sits in the sibling ../hana folder.
+const GO_EXECUTABLE = process.env.HANA_BIN ?? (process.platform === 'win32' ? '..\\hana\\hana.exe' : '../hana/hana');
 
 function extractHajaBlocks(markdown: string): string[] {
     const blocks: string[] = [];
