@@ -37,6 +37,14 @@ export const stdModules: readonly StdModule[] = [
     ],
   },
   {
+    id: "csv",
+    name: "CSV",
+    functions: [
+      { id: "csv.parse", name: "파싱" },
+      { id: "csv.stringify", name: "문자열화" },
+    ],
+  },
+  {
     id: "random",
     name: "무작위",
     functions: [
