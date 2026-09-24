@@ -7,15 +7,15 @@
 // previous ad hoc engine to keep index.ts's public contract unchanged).
 import * as ast from "./ast";
 import { Environment } from "./env";
-import { HajaObject } from "./object";
+import { HariObject } from "./object";
 import { type LangConfig, KoreanConfig } from "./config";
 import { evaluateNode } from "./evalExpr";
 import { executeStmt } from "./execStmt";
-import { HajaRuntimeError } from "./errors";
+import { HariRuntimeError } from "./errors";
 import { BuiltinFunction, type BuiltinFn, type NativeModule } from "./object";
 import { RuntimeError, Codes, localize } from "./errs";
 
-export class HajaInterpreter {
+export class HariInterpreter {
   callDepth = 0;
   ast: ast.Program;
   globalEnv: Environment;
@@ -114,8 +114,8 @@ export class HajaInterpreter {
         }
       }
     } catch (e) {
-      if (e instanceof HajaRuntimeError) throw e;
-      throw new HajaRuntimeError(localize(this.config.locale, e));
+      if (e instanceof HariRuntimeError) throw e;
+      throw new HariRuntimeError(localize(this.config.locale, e));
     }
 
     if (this.inlineBuffer !== "") {
@@ -127,7 +127,7 @@ export class HajaInterpreter {
   formatValue(val: unknown): string {
     if (val === null || val === undefined) return this.config.nullString;
     if (typeof val === "string") return val;
-    if (val instanceof HajaObject) return this.config.objectFormat.replace("%s", val.className);
+    if (val instanceof HariObject) return this.config.objectFormat.replace("%s", val.className);
     if (typeof val === "boolean") return val ? this.config.trueString : this.config.falseString;
     if (Array.isArray(val)) return "[" + val.map((el) => this.formatValue(el)).join(", ") + "]";
     if (val instanceof Map) {

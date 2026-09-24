@@ -1,5 +1,5 @@
-// Mirrors hana/parser/haja/langprofile.go. This repo never shares a Parser
-// across locales the way Go's parser/haja does (haja-docs and kanade-docs
+// Mirrors hana/parser/hari/langprofile.go. This repo never shares a Parser
+// across locales the way Go's parser/hari does (hari-docs and kanade-docs
 // each keep their own full copy per the "구조만 미러링" decision), so
 // LangProfile here isn't parameterizing a generic parser — it's just pulled
 // out of parser.ts into its own file to keep the two repos' parser.ts files
@@ -13,7 +13,7 @@ export enum LoopKind {
   Range,
 }
 
-// Component mirrors parser/haja/parser.go's local `Component` struct: one
+// Component mirrors parser/hari/parser.go's local `Component` struct: one
 // collected (expression, trailing particles) pair from parseGenericSov's
 // component-accumulation loop.
 export interface Component {
@@ -53,7 +53,7 @@ export function literalIn(literal: string, options: string[]): boolean {
   return options.includes(literal);
 }
 
-export const hajaProfile: LangProfile = {
+export const hariProfile: LangProfile = {
   errorLiterals: ["오류", "오류가"],
   pluralSelfWords: ["우리", "'우리'"],
   conditionThenWords: ["라면"],

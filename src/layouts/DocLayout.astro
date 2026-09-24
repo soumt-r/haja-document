@@ -5,7 +5,7 @@ const { frontmatter } = Astro.props;
 
 const navItems = [
   { title: '시작하기', links: [
-    { text: "'하자'는 이런 언어예요!", href: '/docs/intro' },
+    { text: "'하리'는 이런 언어예요!", href: '/docs/intro' },
   ]},
   { title: '기본 문법 튜토리얼', links: [
     { text: '1. 데이터 담기 (변수)', href: '/docs/tutorial/1-variables' },
@@ -58,7 +58,7 @@ const navItems = [
 ];
 ---
 
-<Layout title={`${frontmatter.title} | 하자(Haja) 언어`} customMaxWidth="max-w-6xl">
+<Layout title={`${frontmatter.title} | 하리(Hari) 언어`} customMaxWidth="max-w-6xl">
   <div class="doc-shell flex flex-col md:flex-row gap-12 lg:gap-16 mt-6">
     <aside class="doc-aside w-full md:w-56 shrink-0 border-b md:border-b-0 border-rule pb-8 md:pb-0">
       <nav class="md:sticky md:top-10 md:max-h-[calc(100vh-5rem)] md:overflow-y-auto space-y-9 md:pr-2" aria-label="문서 목차">
@@ -114,11 +114,11 @@ const navItems = [
   </div>
 
   <script>
-    import { runHaja } from '../utils/haja';
+    import { runHari } from '../utils/hari';
     import { EditorView, basicSetup } from "codemirror";
-    import { hajaLanguage } from '../utils/haja/cm-language';
-    import { hajaTheme } from '../utils/haja/cmTheme';
-      import { hajaLinter, hajaAutocomplete } from '../utils/haja/hajaLSP';
+    import { hariLanguage } from '../utils/hari/cm-language';
+    import { hariTheme } from '../utils/hari/cmTheme';
+      import { hariLinter, hariAutocomplete } from '../utils/hari/hariLSP';
 
     document.addEventListener("DOMContentLoaded", () => {
 
@@ -171,19 +171,19 @@ const createInputCallback = (outputContainer) => (promptText) => {
       if (openBtn && closeBtn && drawer && sideEditorContainer) {
         const initSideEditor = () => {
           if (sideEditorView) return;
-          const savedCode = sessionStorage.getItem('haja-playground-code') || "'이름'을 [문자열]인 \"홍길동\"으로 정하자\n틀\"안녕하세요, {'이름'}님!\"을 출력하자";
+          const savedCode = sessionStorage.getItem('hari-playground-code') || "'이름'을 [문자열]인 \"홍길동\"으로 정하자\n틀\"안녕하세요, {'이름'}님!\"을 출력하자";
           sideEditorView = new EditorView({
             doc: savedCode,
             extensions: [
               basicSetup,
-              hajaLanguage,
-              hajaLinter,
-              hajaAutocomplete,
+              hariLanguage,
+              hariLinter,
+              hariAutocomplete,
               EditorView.lineWrapping,
-              hajaTheme({ height: "100%" }),
+              hariTheme({ height: "100%" }),
               EditorView.updateListener.of((v) => {
                 if (v.docChanged) {
-                  sessionStorage.setItem('haja-playground-code', v.state.doc.toString());
+                  sessionStorage.setItem('hari-playground-code', v.state.doc.toString());
                 }
               })
             ],
@@ -210,7 +210,7 @@ const createInputCallback = (outputContainer) => (promptText) => {
           }
           
           initSideEditor();
-          sessionStorage.setItem('haja-playground-open', 'true');
+          sessionStorage.setItem('hari-playground-open', 'true');
         };
 
         const closeDrawer = () => {
@@ -218,14 +218,14 @@ const createInputCallback = (outputContainer) => (promptText) => {
           drawer.classList.remove('w-full', 'md:w-1/2');
           document.documentElement.classList.remove('drawer-open');
           document.body.style.width = '100%';
-          sessionStorage.setItem('haja-playground-open', 'false');
+          sessionStorage.setItem('hari-playground-open', 'false');
         };
 
         openBtn.addEventListener('click', () => openDrawer(true));
         closeBtn.addEventListener('click', closeDrawer);
 
         // Check initial state
-        if (sessionStorage.getItem('haja-playground-open') === 'true') {
+        if (sessionStorage.getItem('hari-playground-open') === 'true') {
           openDrawer(false);
         }
 
@@ -245,7 +245,7 @@ const createInputCallback = (outputContainer) => (promptText) => {
           
           try {
             const code = sideEditorView.state.doc.toString();
-            const result = await runHaja(code, createInputCallback(sideOutput), outputCallback);
+            const result = await runHari(code, createInputCallback(sideOutput), outputCallback);
             if (!printedSomething && !result) {
                sideOutput.innerText += '\n(앗, 출력된 결과가 없어요. "출력하자"를 써보세요.)';
             }
@@ -266,7 +266,7 @@ const createInputCallback = (outputContainer) => (promptText) => {
 
       /* --- Inline Interactive Blocks --- */
       // Find all code blocks inside the article
-      const codeBlocks = document.querySelectorAll('.doc-article pre[data-language="plaintext"], .doc-article pre[data-language="haja"]');
+      const codeBlocks = document.querySelectorAll('.doc-article pre[data-language="plaintext"], .doc-article pre[data-language="hari"]');
       
       codeBlocks.forEach((pre, index) => {
         // Extract raw text
@@ -328,11 +328,11 @@ const createInputCallback = (outputContainer) => (promptText) => {
           doc: rawCode,
           extensions: [
             basicSetup,
-              hajaLanguage,
-              hajaLinter,
-              hajaAutocomplete,
+              hariLanguage,
+              hariLinter,
+              hariAutocomplete,
             EditorView.lineWrapping,
-            hajaTheme({ maxHeight: "400px" })
+            hariTheme({ maxHeight: "400px" })
           ],
           parent: editorDiv
         });
@@ -354,7 +354,7 @@ const createInputCallback = (outputContainer) => (promptText) => {
 
           try {
             const code = editorView.state.doc.toString();
-            const result = await runHaja(code, createInputCallback(outputPre), outputCallback);
+            const result = await runHari(code, createInputCallback(outputPre), outputCallback);
             if (!printedSomething && !result) {
                outputPre.innerText += '\n(앗, 출력된 결과가 없어요. "출력하자"를 써보세요.)';
             }

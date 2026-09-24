@@ -17,7 +17,7 @@ const keywords: readonly string[] = [
   ...lspKeywords.words,
 ];
 
-export function hajaCompletions(context: CompletionContext): CompletionResult | null {
+export function hariCompletions(context: CompletionContext): CompletionResult | null {
   let word = context.matchBefore(/[\uAC00-\uD7A3a-zA-Z_]+/);
   let isVar = false;
   let isType = false;
@@ -117,9 +117,9 @@ export function hajaCompletions(context: CompletionContext): CompletionResult | 
   };
 }
 
-export const hajaAutocomplete = autocompletion({ override: [hajaCompletions] });
+export const hariAutocomplete = autocompletion({ override: [hariCompletions] });
 
-export const hajaLintSource = (view: EditorView): Diagnostic[] => {
+export const hariLintSource = (view: EditorView): Diagnostic[] => {
   let diagnostics: Diagnostic[] = [];
   const doc = view.state.doc.toString();
   
@@ -177,4 +177,4 @@ export const hajaLintSource = (view: EditorView): Diagnostic[] => {
   return diagnostics;
 };
 
-export const hajaLinter = linter(hajaLintSource);
+export const hariLinter = linter(hariLintSource);

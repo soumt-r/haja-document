@@ -7,7 +7,7 @@
 // below) — a deliberate, justified simplification enabled by using real JS
 // exceptions where Go only has plain error returns.
 import * as ast from "./ast";
-import type { HajaInterpreter } from "./interpreter";
+import type { HariInterpreter } from "./interpreter";
 import { MAX_CALL_DEPTH } from "./config";
 import { checkInitialField, checkReturn, describeType, requireBool } from "./types";
 import { Environment } from "./env";
@@ -16,7 +16,7 @@ import { bindParams } from "./params";
 import { popFromList, requireMutable } from "./listOps";
 import { findInClassChain, classIsOrExtends } from "./classLookup";
 import {
-  HajaObject,
+  HariObject,
   BoundMethod,
   BuiltinFunction,
   BoundStringMethod,
@@ -32,7 +32,7 @@ import { RuntimeError, Codes, accessViolation, typeNameOf } from "./errs";
 // execBlock runs a statement list in env and returns the function's return
 // value if a ReturnStatement fired inside it (mirrors every Go call site's
 // "loop Execute, catch *ReturnValue" pattern).
-export async function execBlock(i: HajaInterpreter, statements: ast.Statement[], env: Environment): Promise<unknown> {
+export async function execBlock(i: HariInterpreter, statements: ast.Statement[], env: Environment): Promise<unknown> {
   try {
     for (const s of statements) {
       await executeStmt(i, s, env);
@@ -50,7 +50,7 @@ function unescapeString(val: string): string {
 
 /** Runs a function value — a name from `<이름>`, a declared function, a builtin, or a bound method —
  *  with already-evaluated arguments. The standard library calls the functions it is given through this. */
-export async function callValue(i: HajaInterpreter, env: Environment, callee: unknown, args: unknown[]): Promise<unknown> {
+export async function callValue(i: HariInterpreter, env: Environment, callee: unknown, args: unknown[]): Promise<unknown> {
   if (typeof callee === "string") {
     const funcName = callee;
     const [fnVal] = env.get(funcName);
@@ -189,7 +189,7 @@ export async function callValue(i: HajaInterpreter, env: Environment, callee: un
   throw new RuntimeError(Codes.NotCallable);
 }
 
-export async function evaluateNode(i: HajaInterpreter, expr: ast.Expression | null, env: Environment): Promise<unknown> {
+export async function evaluateNode(i: HariInterpreter, expr: ast.Expression | null, env: Environment): Promise<unknown> {
   if (expr === null) return null;
 
   // Calls and constructions are what recurse; count them like hana's Evaluate does.
@@ -205,7 +205,7 @@ export async function evaluateNode(i: HajaInterpreter, expr: ast.Expression | nu
   return evaluateNodeInner(i, expr, env);
 }
 
-async function evaluateNodeInner(i: HajaInterpreter, expr: ast.Expression, env: Environment): Promise<unknown> {
+async function evaluateNodeInner(i: HariInterpreter, expr: ast.Expression, env: Environment): Promise<unknown> {
   switch (expr.type) {
     case "TypeReference": {
       const [clsObj, exists] = env.get(expr.name);
@@ -304,7 +304,7 @@ async function evaluateNodeInner(i: HajaInterpreter, expr: ast.Expression, env: 
         const objName = name.slice(0, dotIdx);
         const methodName = name.slice(dotIdx + 1);
         const [val, ok] = env.get(objName);
-        if (ok && val instanceof HajaObject) {
+        if (ok && val instanceof HariObject) {
           return new BoundMethod(val, methodName);
         }
       }
@@ -332,7 +332,7 @@ async function evaluateNodeInner(i: HajaInterpreter, expr: ast.Expression, env: 
         throw new RuntimeError(Codes.ClassNotFound, clsName);
       }
       if (cls.isAbstract) throw new RuntimeError(Codes.AbstractClass, clsName);
-      const obj = new HajaObject(clsName);
+      const obj = new HariObject(clsName);
 
       for (const stmt of cls.body) {
         if (stmt.type === "VariableDeclaration" && !stmt.isStatic) {
@@ -424,7 +424,7 @@ async function evaluateNodeInner(i: HajaInterpreter, expr: ast.Expression, env: 
         }
         return new BoundMethod(obj.object, property.name, true);
       }
-      if (obj instanceof HajaObject) {
+      if (obj instanceof HariObject) {
         let propName = "";
         let isFunc = false;
         if (property.type === "FunctionReference") {
@@ -577,14 +577,14 @@ async function evaluateNodeInner(i: HajaInterpreter, expr: ast.Expression, env: 
       const right = await evaluateNode(i, expr.right, env);
 
       if (expr.operator === "instanceof") {
-        if (left instanceof HajaObject && right instanceof ClassReference) {
+        if (left instanceof HariObject && right instanceof ClassReference) {
           return classIsOrExtends(i, left.className, right.className);
         }
         return false;
       }
 
       if (expr.operator === "==" || expr.operator === "!=") {
-        if (left instanceof HajaObject) {
+        if (left instanceof HariObject) {
           const cls = i.classes[left.className];
           let funcDecl: ast.FunctionDeclaration | null = null;
           for (const stmt of cls.body) {

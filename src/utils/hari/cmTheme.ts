@@ -1,4 +1,4 @@
-// The Haja editor look: white paper and ink text, with the logo's purple for verbs
+// The Hari editor look: white paper and ink text, with the logo's purple for verbs
 // (정하자/출력하자) and its orange for particles (을/를/으로).
 // Shared by every CodeMirror instance (docs examples, side drawer, playground).
 import { EditorView } from "codemirror";
@@ -31,7 +31,7 @@ const highlight = HighlightStyle.define([
   { tag: t.bracket, color: inkSoft },
 ]);
 
-export function hajaTheme(opts: { height?: string; maxHeight?: string; fontSize?: string } = {}) {
+export function hariTheme(opts: { height?: string; maxHeight?: string; fontSize?: string } = {}) {
   return [
     EditorView.theme({
       "&": {

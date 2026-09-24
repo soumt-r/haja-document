@@ -1,12 +1,12 @@
 import { readdirSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
-import { Lexer } from './src/utils/haja/lexer.ts';
-import { Parser } from './src/utils/haja/parser.ts';
-import { HajaInterpreter as Interpreter } from './src/utils/haja/interpreter.ts';
-import { registerStandardLibrary } from './src/utils/haja/stdlib.ts';
-import { KoreanConfig } from './src/utils/haja/config.ts';
-import { localize, syntaxError } from './src/utils/haja/errs.ts';
+import { Lexer } from './src/utils/hari/lexer.ts';
+import { Parser } from './src/utils/hari/parser.ts';
+import { HariInterpreter as Interpreter } from './src/utils/hari/interpreter.ts';
+import { registerStandardLibrary } from './src/utils/hari/stdlib.ts';
+import { KoreanConfig } from './src/utils/hari/config.ts';
+import { localize, syntaxError } from './src/utils/hari/errs.ts';
 
 const DOCS_DIR = './src/pages/docs';
 
@@ -18,9 +18,9 @@ const NONDETERMINISTIC = /\[무작위\]|<지금>/;
 // HANA_BIN overrides where the hana binary is; by default it sits in the sibling ../hana folder.
 const GO_EXECUTABLE = process.env.HANA_BIN ?? (process.platform === 'win32' ? '..\\hana\\hana.exe' : '../hana/hana');
 
-function extractHajaBlocks(markdown: string): string[] {
+function extractHariBlocks(markdown: string): string[] {
     const blocks: string[] = [];
-    const regex = /```haja([^\n]*)\n([\s\S]*?)```/g;
+    const regex = /```hari([^\n]*)\n([\s\S]*?)```/g;
     let match;
     while ((match = regex.exec(markdown)) !== null) {
         if (!match[1].includes('skip')) blocks.push(match[2]); // `skip`: an example that needs a peer, only shown
@@ -57,7 +57,7 @@ function withError(output: string, error: string): string {
 }
 
 function runGoEngine(code: string, stdin = ''): string {
-    const tempFile = 'temp_test.hj';
+    const tempFile = 'temp_test.hr';
     writeFileSync(tempFile, code);
 
     try {
@@ -321,7 +321,7 @@ const EXTRA_CASES: { name: string; code: string; stdin?: string }[] = [
 const SYNTAX_CASES: string[] = ["\"a\"를 출력하자 )", "\"a\"를 출력하자 @", "1 +"];
 
 function goSyntaxMessages(code: string): string[] {
-    const tempFile = 'temp_syntax.hj';
+    const tempFile = 'temp_syntax.hr';
     writeFileSync(tempFile, code);
     let stdout = '';
     try {
@@ -347,7 +347,7 @@ async function main() {
 
     await walk(DOCS_DIR, async (path) => {
         const content = readFileSync(path, 'utf8');
-        const blocks = extractHajaBlocks(content);
+        const blocks = extractHariBlocks(content);
         
         for (let i = 0; i < blocks.length; i++) {
             total++;

@@ -1,6 +1,6 @@
 // Mirrors hana/vm/params.go's bindParams.
 import type * as ast from "./ast";
-import type { HajaInterpreter } from "./interpreter";
+import type { HariInterpreter } from "./interpreter";
 import { Environment } from "./env";
 import { evaluateNode } from "./evalExpr";
 import { RuntimeError, Codes } from "./errs";
@@ -13,7 +13,7 @@ import { declareParam } from "./types";
 //     the caller's scope);
 //   - a missing argument with no default is a hard MissingArgumentError;
 //   - more arguments than declared parameters is a hard ArgumentError.
-export async function bindParams(i: HajaInterpreter, params: ast.Parameter[], args: unknown[], env: Environment): Promise<void> {
+export async function bindParams(i: HariInterpreter, params: ast.Parameter[], args: unknown[], env: Environment): Promise<void> {
   if (args.length > params.length) {
     throw new RuntimeError(Codes.TooManyArguments, params.length, args.length);
   }

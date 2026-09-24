@@ -1,8 +1,8 @@
 // Mirrors hana/vm/class_lookup.go.
 import type * as ast from "./ast";
-import type { HajaInterpreter } from "./interpreter";
+import type { HariInterpreter } from "./interpreter";
 import { ThrownSignal } from "./errors";
-import { HajaObject } from "./object";
+import { HariObject } from "./object";
 
 // findInClassChain walks cls up its baseClass chain, calling visit(body) at
 // each level. visit returns true once it has found what it was looking for
@@ -10,7 +10,7 @@ import { HajaObject } from "./object";
 // that stops the walk, matching 하자's shadowing rule: once a name is found
 // in a class, ancestors are never consulted for the same name.
 export function findInClassChain(
-  i: HajaInterpreter,
+  i: HariInterpreter,
   cls: ast.ClassDeclaration | null,
   visit: (body: ast.Statement[]) => boolean,
 ): void {
@@ -24,7 +24,7 @@ export function findInClassChain(
 
 // classIsOrExtends reports whether className is targetName itself, or
 // inherits from it directly/transitively via baseClass (upcasting).
-export function classIsOrExtends(i: HajaInterpreter, className: string, targetName: string): boolean {
+export function classIsOrExtends(i: HariInterpreter, className: string, targetName: string): boolean {
   let cur: string | null = className;
   while (cur !== null && cur !== "") {
     if (cur === targetName) return true;
@@ -36,12 +36,12 @@ export function classIsOrExtends(i: HajaInterpreter, className: string, targetNa
 }
 
 // thrownValueMatchesType checks whether a TryStatement's block threw a value
-// matching a CatchClause's declared type. Only a thrown HajaObject (an actual
+// matching a CatchClause's declared type. Only a thrown HariObject (an actual
 // class instance) has a class to match against — an engine-raised error
 // (TypeError, ...) is a plain Error, never a class instance, and is only
 // reachable through an untyped catch handler.
-export function thrownValueMatchesType(i: HajaInterpreter, err: unknown, typeName: string): boolean {
+export function thrownValueMatchesType(i: HariInterpreter, err: unknown, typeName: string): boolean {
   if (!(err instanceof ThrownSignal)) return false;
-  if (!(err.value instanceof HajaObject)) return false;
+  if (!(err.value instanceof HariObject)) return false;
   return classIsOrExtends(i, err.value.className, typeName);
 }

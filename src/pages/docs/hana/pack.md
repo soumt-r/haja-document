@@ -9,16 +9,16 @@ description: hana pack으로 내 프로그램을 하자나 Hana가 없는 컴퓨
 ### 묶어 보기
 
 ```bash
-hana pack 앱.hj
+hana pack 앱.hr
 ```
 
 같은 폴더에 `앱.exe`(윈도우) 또는 `앱`(리눅스, 맥)이 만들어져요. 이름을 정하려면 `-o`를 써요.
 
 ```bash
-hana pack 앱.hj -o 내앱
+hana pack 앱.hr -o 내앱
 ```
 
-카나데 프로그램(`.knd`)도 똑같이 묶어요. 묶기 전에 `hana run --bc 앱.hj`로 돌려 보면 묶은 뒤와 같은 방식(바이트코드)으로 확인할 수 있어요.
+카나데 프로그램(`.knd`)도 똑같이 묶어요. 묶기 전에 `hana run --bc 앱.hr`로 돌려 보면 묶은 뒤와 같은 방식(바이트코드)으로 확인할 수 있어요.
 
 ### 안에 무엇이 들어 있나요?
 
@@ -43,7 +43,7 @@ libraries/
 폴더 없이 파일 하나만 주고 싶다면 `--embed`를 붙여요. 라이브러리가 실행 파일 안에 압축되어 들어가고, 처음 실행할 때 사용자 캐시 폴더에 한 번 풀려요.
 
 ```bash
-hana pack 서버.hj --embed
+hana pack 서버.hr --embed
 ```
 
 ### 다른 운영체제용으로 만들기
@@ -51,7 +51,7 @@ hana pack 서버.hj --embed
 `--target`으로 다른 운영체제와 CPU용 실행 파일을 만들어요. 윈도우에서 리눅스용을 만드는 식이에요.
 
 ```bash
-hana pack 앱.hj --target linux-amd64
+hana pack 앱.hr --target linux-amd64
 ```
 
 그 플랫폼용 런타임이 필요해요. `hana` 옆에 `hana-runtime-linux-amd64`라는 이름으로 두거나 `--runtime`으로 경로를 알려 주세요. 런타임은 Hana 소스에서 `GOOS=linux GOARCH=amd64 go build -o hana-runtime-linux-amd64 ./cmd/hana-runtime`처럼 만들어요.

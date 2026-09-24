@@ -33,7 +33,7 @@ const valueRegex = alternation(valueWords);
 
 const isHangul = (ch: string | undefined) => ch !== undefined && /[가-힣]/.test(ch);
 
-const hajaParser: StreamParser<unknown> = {
+const hariParser: StreamParser<unknown> = {
   token(stream) {
     if (stream.eatSpace()) return null;
 
@@ -79,4 +79,4 @@ const hajaParser: StreamParser<unknown> = {
   },
 };
 
-export const hajaLanguage = StreamLanguage.define(hajaParser);
+export const hariLanguage = StreamLanguage.define(hariParser);

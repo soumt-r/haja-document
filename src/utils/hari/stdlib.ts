@@ -1,6 +1,6 @@
 // Mirrors hana/stdlib/builtins.go's RegisterStandardLibrary. Go calls this
 // from cmd/run.go right after vm.NewInterpreter(...); this repo's index.ts
-// does the same right after `new HajaInterpreter(...)`. The four conversion
+// does the same right after `new HariInterpreter(...)`. The four conversion
 // builtins (문자로/숫자로/코드로/글자로) are what tutorial/1-variables.md's
 // "형변환 유틸리티" section demonstrates — global functions callable without
 // an import, unlike 수학 (which stays registered-but-unreachable here since
@@ -8,14 +8,14 @@
 // native modules included — see execStmt.ts's ImportStatement case; that
 // matches this repo's previous ad hoc engine's own behavior, not a new gap).
 import { BuiltinFunction, type NativeModule } from "./object";
-import type { HajaInterpreter } from "./interpreter";
+import type { HariInterpreter } from "./interpreter";
 import { RuntimeError, Codes } from "./errs";
 import { stdModules } from "./stdNames";
 import { nativeImpls, hostImpls } from "./stdImpls";
 import { callValue } from "./evalExpr";
 import type { Environment } from "./env";
 
-export function registerStandardLibrary(i: HajaInterpreter): void {
+export function registerStandardLibrary(i: HariInterpreter): void {
   const cfg = i.config;
 
   i.registerBuiltin(cfg.builtinToString, (_env, ...args) => {

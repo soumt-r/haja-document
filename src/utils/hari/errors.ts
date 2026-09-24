@@ -5,18 +5,18 @@
 // browser Playground wants immediate feedback instead, so this engine keeps
 // the previous ad hoc engine's behavior of throwing on the first error, and
 // uses real JS exceptions for control flow. index.ts's public contract
-// depends on HajaError vs HajaRuntimeError being distinguishable (different
-// message prefixes) and on HajaError's message containing "N번째 줄" for
-// hajaLSP.ts's diagnostic-position regex — both preserved here verbatim.
+// depends on HariError vs HariRuntimeError being distinguishable (different
+// message prefixes) and on HariError's message containing "N번째 줄" for
+// hariLSP.ts's diagnostic-position regex — both preserved here verbatim.
 
-export class HajaError extends Error {
+export class HariError extends Error {
   line: number;
   col: number;
   length: number;
 
   constructor(message: string, line: number, col = 0, length = 1) {
     super(`${line}번째 줄, ${col}번째 글자: ${message}`);
-    this.name = "HajaError";
+    this.name = "HariError";
     this.line = line;
     this.col = col;
     this.length = length;
@@ -25,22 +25,22 @@ export class HajaError extends Error {
 
 // The parser found syntax problems; message is the finished, localized report
 // (index.ts throws it as-is, without an engine-bug prefix).
-export class HajaSyntaxReport extends Error {
+export class HariSyntaxReport extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "HajaSyntaxReport";
+    this.name = "HariSyntaxReport";
   }
 }
 
-export class HajaRuntimeError extends Error {
+export class HariRuntimeError extends Error {
   line: number | string;
-  hajaObj?: unknown;
+  hariObj?: unknown;
 
-  constructor(message: string, line: number | string = "?", hajaObj?: unknown) {
+  constructor(message: string, line: number | string = "?", hariObj?: unknown) {
     super(message);
-    this.name = "HajaRuntimeError";
+    this.name = "HariRuntimeError";
     this.line = line;
-    this.hajaObj = hajaObj;
+    this.hariObj = hariObj;
   }
 }
 
@@ -78,7 +78,7 @@ function describeThrown(value: unknown): string {
 }
 
 // ThrownSignal carries a 하자-level thrown value (an ThownError-equivalent) —
-// distinct from HajaRuntimeError, which is an *engine*-raised error (TypeError,
+// distinct from HariRuntimeError, which is an *engine*-raised error (TypeError,
 // IndexOutOfBoundsError, ...) not a user `던지자`.
 export class ThrownSignal extends Error {
   value: unknown;

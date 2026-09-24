@@ -1,10 +1,10 @@
 ---
 layout: ../../../layouts/DocLayout.astro
 title: 2. 구문 트리(AST) 구조
-description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
+description: 하리(Hari) 언어의 추상 구문 트리(AST) 명세입니다.
 ---
 
-이 문서는 하자 언어 파서(`Parser`)가 생성하는 AST(Abstract Syntax Tree)의 노드별 JSON 스키마를 정의하고 있어요. 하자 언어의 인터프리터, 컴파일러, 정적 분석기 등 모든 도구는 이 명세서를 기준으로 구현된답니다.
+이 문서는 하리 언어 파서(`Parser`)가 생성하는 AST(Abstract Syntax Tree)의 노드별 JSON 스키마를 정의하고 있어요. 하리 언어의 인터프리터, 컴파일러, 정적 분석기 등 모든 도구는 이 명세서를 기준으로 구현된답니다.
 
 ## 1. 프로그램 (Program)
 모든 소스 코드의 최상위 노드예요.
@@ -43,7 +43,7 @@ description: 하자(Haja) 언어의 추상 구문 트리(AST) 명세입니다.
 ```json
 {
   "type": "CompoundAssignment",
-  "operator": "+=", // 더하자는 "+=", 빼자는 "-=" 등
+  "operator": "+=", // 더하리는 "+=", 빼자는 "-=" 등
   "target": /* Identifier 또는 MemberExpression */,
   "value": /* Expression 노드 */
 }

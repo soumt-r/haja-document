@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 ---
 
-<Layout title="놀이터 | 하자(Haja) 언어" customMaxWidth="max-w-[1400px]">
+<Layout title="놀이터 | 하리(Hari) 언어" customMaxWidth="max-w-[1400px]">
   <div class="w-full flex flex-col h-[calc(100vh-220px)] mt-[-20px]">
     <div class="flex items-end justify-between mb-5">
       <div>
@@ -18,7 +18,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="flex flex-col md:flex-row gap-5 flex-grow min-h-0">
       <!-- Editor -->
       <div class="hj-panel flex-1 min-h-0">
-        <div class="hj-panel-head"><span class="hj-tag">main.hj</span></div>
+        <div class="hj-panel-head"><span class="hj-tag">main.hr</span></div>
         <div id="editor-container" class="flex-grow w-full overflow-hidden flex flex-col"></div>
       </div>
 
@@ -33,11 +33,11 @@ import Layout from '../layouts/Layout.astro';
   </div>
 
   <script>
-    import { runHaja } from '../utils/haja';
+    import { runHari } from '../utils/hari';
     import { EditorView, basicSetup } from "codemirror";
-    import { hajaLanguage } from '../utils/haja/cm-language';
-    import { hajaTheme } from '../utils/haja/cmTheme';
-      import { hajaLinter, hajaAutocomplete } from '../utils/haja/hajaLSP';
+    import { hariLanguage } from '../utils/hari/cm-language';
+    import { hariTheme } from '../utils/hari/cmTheme';
+      import { hariLinter, hariAutocomplete } from '../utils/hari/hariLSP';
 
     const defaultCode = `"안녕, 세계!"를 출력하자`;
 
@@ -53,11 +53,11 @@ import Layout from '../layouts/Layout.astro';
         doc: defaultCode,
         extensions: [
           basicSetup,
-          hajaLanguage,
-            hajaLinter,
-            hajaAutocomplete,
+          hariLanguage,
+            hariLinter,
+            hariAutocomplete,
           EditorView.lineWrapping,
-          hajaTheme({ height: "100%", fontSize: "15.5px" })
+          hariTheme({ height: "100%", fontSize: "15.5px" })
         ],
         parent: document.getElementById("editor-container")!
       });
@@ -120,7 +120,7 @@ import Layout from '../layouts/Layout.astro';
             });
           };
 
-          const result = await runHaja(code, inputCallback, outputCallback);
+          const result = await runHari(code, inputCallback, outputCallback);
           
           // Only show default message if literally nothing was printed via outputCallback OR return
           if (!printedSomething && !result) {

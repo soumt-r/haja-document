@@ -1,8 +1,8 @@
-// Mirrors hana/lexer/haja/lexer.go: one ordered `{kind, regex}[]` spec table,
+// Mirrors hana/lexer/hari/lexer.go: one ordered `{kind, regex}[]` spec table,
 // first match wins, plus a Python-style indent/dedent stack. The Go lexer
 // works line-by-line and drives everything off a single `tokenize` call; this
 // port keeps that shape but wraps it in a `Lexer` class (constructor
-// tokenizes eagerly, `.tokens` is the result) since hajaLSP.ts already
+// tokenizes eagerly, `.tokens` is the result) since hariLSP.ts already
 // depends on that exact shape (`new Lexer(doc).tokens`).
 import * as tok from "./token";
 import type { Token, TokenType } from "./token";

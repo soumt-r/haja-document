@@ -4,10 +4,10 @@
 // against the type the variable or field was declared with — the caller takes the push back
 // when it does not fit.
 import type * as ast from "./ast";
-import type { HajaInterpreter } from "./interpreter";
+import type { HariInterpreter } from "./interpreter";
 import { Environment } from "./env";
 import { evaluateNode } from "./evalExpr";
-import { HajaObject } from "./object";
+import { HariObject } from "./object";
 import { RuntimeError, Codes } from "./errs";
 import { checkDeclaredType, checkField } from "./types";
 
@@ -19,14 +19,14 @@ export function requireMutable(env: Environment, target: ast.Expression): void {
   }
 }
 
-export async function checkListPush(i: HajaInterpreter, target: ast.Expression, list: unknown[], env: Environment): Promise<void> {
+export async function checkListPush(i: HariInterpreter, target: ast.Expression, list: unknown[], env: Environment): Promise<void> {
   if (target.type === "Identifier") {
     checkDeclaredType(i, env, target.value, list);
     return;
   }
   if (target.type === "MemberExpression") {
     const obj = await evaluateNode(i, target.object, env);
-    if (obj instanceof HajaObject && target.property.type === "Identifier") {
+    if (obj instanceof HariObject && target.property.type === "Identifier") {
       checkField(i, obj, target.property.value, list);
     }
   }

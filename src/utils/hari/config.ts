@@ -1,4 +1,4 @@
-// Mirrors hana/vm/config.go's LangConfig. This repo only ever runs Haja, so
+// Mirrors hana/vm/config.go's LangConfig. This repo only ever runs Hari, so
 // only KoreanConfig exists here (kanade-docs' own config.ts carries the
 // JapaneseConfig equivalent instead) — no runtime language switching inside
 // one repo, per the "구조만 미러링, 레포는 분리" decision.
@@ -45,7 +45,7 @@ export interface LangConfig {
   stringContainsMethod: string;
 
   // equalsMethodName is the magic method evalExpr.ts's BinaryExpression
-  // case looks for on a HajaObject operand of ==/!= (operator overloading).
+  // case looks for on a HariObject operand of ==/!= (operator overloading).
   // Mirrors Go's vm/config.go EqualsMethodName — was hardcoded to "기호 같다"
   // regardless of language until a real kanade-docs example was found to
   // never match (verified against hana.exe).

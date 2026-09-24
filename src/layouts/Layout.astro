@@ -11,7 +11,7 @@ const path = Astro.url.pathname;
 const navItems = [
   { text: '문서', href: '/docs/intro', active: path.startsWith('/docs') },
   { text: '놀이터', href: '/playground', active: path.startsWith('/playground') },
-  { text: 'GitHub', href: 'https://github.com/soumt-r/haja-document', external: true, active: false },
+  { text: 'GitHub', href: 'https://github.com/soumt-r/hari-document', external: true, active: false },
 ];
 ---
 
@@ -32,7 +32,7 @@ const navItems = [
         <a href="/" class="flex items-center gap-2.5" aria-label="하자 홈">
           <img src="/favicon.svg" alt="" class="w-8 h-8" />
           <span class="text-xl font-extrabold tracking-tight">하자</span>
-          <span class="text-sm font-medium text-ink-faint tracking-tight pt-0.5">Haja</span>
+          <span class="text-sm font-medium text-ink-faint tracking-tight pt-0.5">Hari</span>
         </a>
         <nav class="flex items-center gap-7 text-sm">
           {navItems.map((item) => (
@@ -71,6 +71,6 @@ const navItems = [
     bottom: -1px;
     height: 2px;
     border-radius: 2px;
-    background: var(--gradient-haja);
+    background: var(--gradient-hari);
   }
 </style>

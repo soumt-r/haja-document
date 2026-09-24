@@ -2,17 +2,17 @@
 // (Runtime spec 2.2) — on declarations, later assignments (the type outlives the
 // declaration), list pushes, typed parameters and class fields.
 import * as ast from "./ast";
-import type { HajaInterpreter } from "./interpreter";
+import type { HariInterpreter } from "./interpreter";
 import { Environment } from "./env";
-import { HajaObject } from "./object";
+import { HariObject } from "./object";
 import { checkType, checkArgumentType, checkReturnType, describe, type TypeHost, type TypeNames } from "./typecheck";
 import { RuntimeError, Codes } from "./errs";
 
 class InterpreterTypeHost implements TypeHost {
-  constructor(private i: HajaInterpreter) {}
+  constructor(private i: HariInterpreter) {}
 
   classOf(v: unknown): string | null {
-    return v instanceof HajaObject ? v.className : null;
+    return v instanceof HariObject ? v.className : null;
   }
 
   // True when cls is target, extends it, or (at any level of the chain)
@@ -32,21 +32,21 @@ class InterpreterTypeHost implements TypeHost {
 
 // describeType names a value's type in the language's words (for operator errors).
 // requireBool is a condition's value: only true and false are conditions.
-export function requireBool(v: unknown, i: HajaInterpreter): boolean {
+export function requireBool(v: unknown, i: HariInterpreter): boolean {
   if (typeof v === "boolean") return v;
   throw new RuntimeError(Codes.ConditionNotBoolean, describeType(i.config.types, v, i));
 }
 
-export function describeType(names: TypeNames, v: unknown, i: HajaInterpreter): string {
+export function describeType(names: TypeNames, v: unknown, i: HariInterpreter): string {
   return describe(names, v, host(i));
 }
 
-function host(i: HajaInterpreter): TypeHost {
+function host(i: HariInterpreter): TypeHost {
   return new InterpreterTypeHost(i);
 }
 
 // fieldAnnotation finds the type a class (or an ancestor) declared for a field.
-export function fieldAnnotation(i: HajaInterpreter, className: string, prop: string): string | undefined {
+export function fieldAnnotation(i: HariInterpreter, className: string, prop: string): string | undefined {
   let current: string | null = className;
   while (current) {
     const decl: ast.ClassDeclaration | undefined = i.classes[current];
@@ -63,22 +63,22 @@ export function fieldAnnotation(i: HajaInterpreter, className: string, prop: str
 
 // declaredTypeOf resolves name the way Environment.assign does and returns the
 // type it was declared with, if any.
-export function declaredTypeOf(i: HajaInterpreter, env: Environment, name: string): string | undefined {
+export function declaredTypeOf(i: HariInterpreter, env: Environment, name: string): string | undefined {
   const owner = env.ownerOf(name);
   if (owner === null) return undefined;
-  if (owner instanceof HajaObject) return fieldAnnotation(i, owner.className, name);
+  if (owner instanceof HariObject) return fieldAnnotation(i, owner.className, name);
   return owner.declaredType(name);
 }
 
 // checkDeclaredType enforces the type an existing variable or field was
 // declared with.
-export function checkDeclaredType(i: HajaInterpreter, env: Environment, name: string, val: unknown): void {
+export function checkDeclaredType(i: HariInterpreter, env: Environment, name: string, val: unknown): void {
   const declared = declaredTypeOf(i, env, name);
   if (declared !== undefined) checkType(i.config.types, declared, name, val, host(i));
 }
 
 // checkField enforces a class field's declared type on a write.
-export function checkField(i: HajaInterpreter, obj: HajaObject, prop: string, val: unknown): void {
+export function checkField(i: HariInterpreter, obj: HariObject, prop: string, val: unknown): void {
   const annotation = fieldAnnotation(i, obj.className, prop);
   if (annotation !== undefined) checkType(i.config.types, annotation, prop, val, host(i));
 }
@@ -87,7 +87,7 @@ export function checkField(i: HajaInterpreter, obj: HajaObject, prop: string, va
 // this statement's annotation and against the type an earlier declaration
 // gave the variable, then assign — or declare a new one, remembering the type.
 export function assignVariable(
-  i: HajaInterpreter,
+  i: HariInterpreter,
   env: Environment,
   name: string,
   val: unknown,
@@ -108,7 +108,7 @@ export function assignVariable(
 
 // declareParam binds one argument to its parameter, enforcing the parameter's
 // declared type, which then keeps constraining assignments inside the body.
-export function declareParam(i: HajaInterpreter, env: Environment, param: ast.Parameter, val: unknown): void {
+export function declareParam(i: HariInterpreter, env: Environment, param: ast.Parameter, val: unknown): void {
   if (param.typeAnnotation) {
     checkArgumentType(i.config.types, param.typeAnnotation.name, param.name.value, val, host(i));
     env.declare(param.name.value, val);
@@ -119,12 +119,12 @@ export function declareParam(i: HajaInterpreter, env: Environment, param: ast.Pa
 }
 
 // checkReturn enforces a function's declared return type, if it wrote one.
-export function checkReturn(i: HajaInterpreter, fn: ast.FunctionDeclaration, val: unknown): unknown {
+export function checkReturn(i: HariInterpreter, fn: ast.FunctionDeclaration, val: unknown): unknown {
   if (fn.returnType) checkReturnType(i.config.types, fn.returnType.name, fn.name.value, val, host(i));
   return val;
 }
 
 // checkInitialField checks a field's default value when an object is created.
-export function checkInitialField(i: HajaInterpreter, stmt: ast.VariableDeclaration, val: unknown): void {
+export function checkInitialField(i: HariInterpreter, stmt: ast.VariableDeclaration, val: unknown): void {
   if (stmt.typeRef) checkType(i.config.types, stmt.typeRef.name, stmt.name.value, val, host(i));
 }
