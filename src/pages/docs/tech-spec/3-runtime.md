@@ -44,6 +44,7 @@ description: 하리(Hari) 언어의 실행기(Interpreter) 동작 방식과 런�
 ### 2.3 Nullable과 기본 반환값
 - **선언만 된 변수 (Nullable)**: `isDeclarationOnly: true` (`준비하자`)로 선언된 변수는 런타임 메모리에 즉시 `Null`(비어있음) 값으로 초기화되어야 해요. 즉, 하리의 모든 타입은 기본적으로 Null을 허용(Nullable)한답니다.
 - **기본 반환값 (Default Return)**: 함수나 메서드가 `ReturnStatement`(`돌려주자`)를 만나지 않고 블록 실행을 끝마치면, 런타임은 호출자에게 자동으로 `Null`을 반환해야 해요.
+- **최상위의 반환 (Top-level Return)**: 함수 밖(프로그램의 최상위)에서 `ReturnStatement`를 만나면 프로그램은 그 자리에서 에러 없이 끝나야 해요(값은 버려요). 둘러싼 `마무리는 항상` 블록은 끝나기 전에 실행돼요. 임포트한 파일의 최상위라면 그 파일의 최상위 코드만 끝나고, 파일은 적재된 것으로 봐요.
 
 ### 2.4 널 참조 안전성 (Null Safety)
 - 런타임 평가 중 `Null(비어있음)` 값에 대해 속성이나 인덱스에 접근하려 하거나(`MemberExpression`), 함수로 호출(`CallExpression`)하려 할 경우 런타임은 즉시 `NullReferenceError`를 발생시켜야 해요.
